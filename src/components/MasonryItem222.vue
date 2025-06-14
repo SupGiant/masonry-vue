@@ -3,17 +3,9 @@
     ref="itemRef"
     class="masonry-item"
     :style="itemStyle"
-    :data-item-index="index"
   >
-    <!-- 如果传入了renderItem，使用渲染函数 -->
-    <component
-      v-if="renderItem"
-      :is="renderItem"
-      :item="item"
-      :index="index"
-    />
-    <!-- 否则使用默认插槽 -->
-    <slot v-else :item="item" :index="index">
+    <!-- 使用插槽 -->
+    <slot :item="item" :index="index">
       <!-- 默认渲染 -->
       <div class="default-item">
         {{ item }}
@@ -23,7 +15,7 @@
 </template>
 
 <script setup lang="ts" generic="T = any">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 
 interface Position {
   top: number
@@ -67,39 +59,27 @@ const itemStyle = computed(() => {
     width: `${width}px`,
     height: height ? `${height}px` : 'auto',
     transform: 'translateZ(0)', // 启用硬件加速
-    transition: 'all 0.3s ease'
   }
 })
 
-// 测量元素高度
+// 测量元素高度 - 只在mounted时执行一次
 const measureHeight = () => {
   if (itemRef.value) {
     const rect = itemRef.value.getBoundingClientRect()
-    emit('heightChange', props.item, rect.height)
+    if (rect.height > 0) {
+      emit('heightChange', props.item, rect.height)
+    }
   }
 }
-
-// 监听位置变化，重新测量高度
-watch(() => props.position, () => {
-  nextTick(() => {
-    measureHeight()
-  })
-}, { flush: 'post' })
 
 onMounted(() => {
   if (itemRef.value) {
     emit('mounted', itemRef.value, props.index)
 
     // 延迟测量，确保内容已渲染
-    nextTick(() => {
+    setTimeout(() => {
       measureHeight()
-    })
-  }
-})
-
-onBeforeUnmount(() => {
-  if (itemRef.value) {
-    emit('unmounted', itemRef.value)
+    }, 10)
   }
 })
 </script>
