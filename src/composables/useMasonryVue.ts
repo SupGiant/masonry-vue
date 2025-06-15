@@ -1,3 +1,4 @@
+import type { VNode } from 'vue'
 
 // 测量存储类，用于缓存项目高度
 class MeasurementStore {
@@ -19,6 +20,12 @@ class MeasurementStore {
     this.measurements.clear()
   }
 }
+
+
+function createMeasurementStore() {
+  return new MeasurementStore()
+}
+
 function debounce<T extends (...args: any[]) => any>(func: T, delay: number = 100): T & { clearTimeout: () => void } {
   let timeoutId: number | null = null
 
@@ -85,6 +92,16 @@ function getContainerScrollOffset(e: HTMLElement| Window) {
   return e === window || e instanceof Window ? getScrollTop() : e.scrollTop - e.getBoundingClientRect().top
 }
 
+/**
+ * 渲染/获取滚动容器元素
+ * @param element 可以是Window对象、HTMLElement对象，或返回这些对象的函数
+ * @returns 返回实际的滚动容器元素（Window或HTMLElement）
+ */
+function renderElement(element: Window | HTMLElement | (() => Window | HTMLElement) | null): Window | HTMLElement | null {
+  if (!element) return null
+  return typeof element === 'function' ? element() : element
+}
+
 
 export {
   MeasurementStore,
@@ -93,4 +110,6 @@ export {
   getWindowHeight,
   getScrollTop,
   getContainerScrollOffset,
+  renderElement,
+  createMeasurementStore
 }
