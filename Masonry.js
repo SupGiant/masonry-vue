@@ -200,7 +200,21 @@ class dj extends i.Component {
       this.forceUpdate()
   }
   render() {
-      let e, {align: o="center", columnWidth: a, items: r, layout: t="basic", minCols: l, renderItem: c, scrollContainer: i, _logTwoColWhitespace: d, _getColumnSpanConfig: s, _getResponsiveModuleConfigForSecondItem: u, _getModulePositioningConfig: b, _enableSectioningPosition: g} = this.props, {gutter: m, hasPendingMeasurements: f, measurementStore: p, width: h} = this.state, {positionStore: x} = this, v = df({
+      let e, {align: o="center",
+        columnWidth: a,
+        items: r,
+        layout: t="basic",
+        minCols: l,
+        renderItem: c,
+        scrollContainer: i,
+        _logTwoColWhitespace: d,
+        _getColumnSpanConfig: s,
+        _getResponsiveModuleConfigForSecondItem: u,
+         _getModulePositioningConfig: b,
+          _enableSectioningPosition: g} = this.props,
+          {gutter: m, hasPendingMeasurements: f, measurementStore: p, width: h}
+          = this.state, {positionStore: x} = this,
+          v = df({
           align: o,
           columnWidth: a,
           gutter: m,
