@@ -41,10 +41,27 @@
             </label>
           </div>
 
+          <div class="control-item">
+            <label>
+              <input v-model="dynamicHeights" type="checkbox" />
+              动态高度测量
+            </label>
+          </div>
+
+          <div class="control-item">
+            <label>
+              <input v-model="useRAF" type="checkbox" />
+              使用RAF优化
+            </label>
+          </div>
+
           <div class="control-actions">
-            <button @click="addItems" class="btn btn-primary">添加图片</button>
+            <button @click="addItems" class="btn btn-primary">添加内容</button>
+            <button @click="addDynamicItems" class="btn btn-primary">添加动态内容</button>
+            <button @click="toggleImages" class="btn btn-success">切换图片</button>
             <button @click="clearItems" class="btn btn-secondary">清空</button>
             <button @click="reflow" class="btn btn-secondary">重新布局</button>
+            <button @click="forceRemeasure" class="btn btn-warning">强制重测</button>
           </div>
 
           <!-- 调试信息 -->
@@ -53,6 +70,9 @@
             <span>实际列宽: {{ masonryRef?.actualColumnWidth?.toFixed(0) || 0 }}px</span>
             <span>容器宽度: {{ masonryRef?.containerWidth || 0 }}px</span>
             <span>可见元素: {{ masonryRef?.visibleItemsCount || 0 }}/{{ items.length }}</span>
+            <span>已测量: {{ masonryRef?.measuredItemsCount || 0 }}</span>
+            <span>未测量: {{ masonryRef?.unmeasuredItemsCount || 0 }}</span>
+            <span>待处理: {{ masonryRef?.hasPendingMeasurements ? '是' : '否' }}</span>
           </div>
         </div>
       </div>
@@ -68,25 +88,53 @@
         :min-cols="minCols"
         :max-cols="maxCols"
         :virtualize="virtualize"
+        :dynamic-heights="dynamicHeights"
+        :use-r-a-f="useRAF"
         @load-more="loadMore"
         class="masonry-wrapper"
       >
         <template #item="{ item, index }">
-          <div class="image-card">
+          <div class="demo-card" :class="{ 'has-image': item.imageUrl && showImages }">
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.content }}</p>
+
+            <!-- 动态图片 -->
             <img
+              v-if="item.imageUrl && showImages"
               :src="item.imageUrl"
               :alt="item.title"
-              :style="{ height: item.height + 'px' }"
               @load="onImageLoad"
               @error="onImageError"
+              class="card-image"
             />
-            <div class="card-overlay">
-              <h3>{{ item.title }}</h3>
-              <p>{{ item.description }}</p>
-              <div class="card-meta">
-                <span>尺寸: {{ item.width }}×{{ item.height }}</span>
-                <span>ID: {{ item.id }}</span>
+
+            <!-- 动态内容 -->
+            <div v-if="item.extraContent" class="extra-content">
+              {{ item.extraContent }}
+            </div>
+
+            <!-- 可展开的详情 -->
+            <div v-if="item.expandable" class="expandable-section">
+              <button
+                @click="toggleExpand(item.id)"
+                class="expand-btn"
+              >
+                {{ item.expanded ? '收起' : '展开' }}详情
+              </button>
+
+              <div v-if="item.expanded" class="expanded-content">
+                <p>这是展开的内容，会动态改变卡片高度。</p>
+                <ul>
+                  <li>动态高度测量</li>
+                  <li>ResizeObserver 监听</li>
+                  <li>自动重新布局</li>
+                </ul>
               </div>
+            </div>
+
+            <div class="card-meta">
+              <span>类型: {{ item.type || '普通' }}</span>
+              <span>ID: {{ item.id }}</span>
             </div>
           </div>
         </template>
@@ -101,10 +149,10 @@
       <!-- 空状态 -->
       <div v-if="items.length === 0 && !loading" class="empty-state">
         <div class="empty-content">
-          <div class="empty-icon">🖼️</div>
-          <h3>暂无图片</h3>
-          <p>点击"添加图片"按钮开始使用瀑布流</p>
-          <button @click="addItems" class="btn btn-primary">添加一些图片</button>
+          <div class="empty-icon">🧱</div>
+          <h3>暂无内容</h3>
+          <p>点击"添加内容"按钮开始测试动态高度测量</p>
+          <button @click="addDynamicItems" class="btn btn-primary">添加动态内容</button>
         </div>
       </div>
     </main>
@@ -116,6 +164,20 @@ import { ref, onMounted } from 'vue'
 import SimpleMasonry from './simple.vue'
 import type { MasonryItem } from './simple.vue'
 
+interface DemoItem extends MasonryItem {
+  title: string
+  content: string
+  type?: string
+  width?: number
+  height?: number
+  category?: string
+  imageUrl?: string
+  extraContent?: string
+  expandable?: boolean
+  expanded?: boolean
+  timestamp: number
+}
+
 // 组件引用
 const masonryRef = ref()
 
@@ -126,9 +188,12 @@ const minCols = ref(3)
 const maxCols = ref(8)
 const virtualize = ref(true)
 const enableInfiniteScroll = ref(true)
+const dynamicHeights = ref(true)
+const useRAF = ref(true)
+const showImages = ref(false)
 
 // 数据状态
-const items = ref<MasonryItem[]>([])
+const items = ref<DemoItem[]>([])
 const loading = ref(false)
 let itemIdCounter = 0
 
@@ -163,8 +228,8 @@ function getRandomCategory() {
   return categories[Math.floor(Math.random() * categories.length)]
 }
 
-// 生成图片数据
-function generateItems(count: number): MasonryItem[] {
+// 生成内容数据
+function generateItems(count: number): DemoItem[] {
   return Array.from({ length: count }, () => {
     const { width, height } = getRandomDimensions()
     const color = getRandomColor()
@@ -173,22 +238,83 @@ function generateItems(count: number): MasonryItem[] {
 
     return {
       id,
-      title: `精美图片 #${id}`,
-      description: `这是一张${width}×${height}的${category}类型图片`,
+      title: `内容项目 #${id}`,
+      content: getRandomContent(),
+      type: '普通',
       width,
       height,
       category,
-      // 使用 placehold.co API
-      imageUrl: `https://placehold.co/${width}x${height}`,
+      imageUrl: `https://picsum.photos/seed/${id}/${width}/${height}`,
       timestamp: Date.now()
     }
   })
 }
 
+// 生成动态内容数据
+function generateDynamicItems(count: number): DemoItem[] {
+  return Array.from({ length: count }, () => {
+    const id = ++itemIdCounter
+    const hasExtra = Math.random() > 0.6
+    const hasImage = Math.random() > 0.5
+    const isExpandable = Math.random() > 0.7
+
+    return {
+      id,
+      title: `动态内容 #${id}`,
+      content: getRandomContent(),
+      type: '动态',
+      extraContent: hasExtra ? '这是额外的动态内容，会影响高度测量' : undefined,
+      imageUrl: hasImage ? `https://picsum.photos/seed/${id}/300/${150 + Math.floor(Math.random() * 200)}` : undefined,
+      expandable: isExpandable,
+      expanded: false,
+      timestamp: Date.now()
+    }
+  })
+}
+
+// 生成随机内容
+function getRandomContent(): string {
+  const contents = [
+    '这是一个短内容。',
+    '这是一个稍长的内容，包含更多的文字来测试不同的高度。',
+    '这是一个很长的内容，用来测试瀑布流布局在处理不同高度内容时的表现。包含了多行文字，以及一些额外的描述信息。当内容高度发生变化时，ResizeObserver 会自动检测并重新计算布局。',
+    '中等长度的内容，用于展示自动高度测量的效果。这个功能对于动态内容非常重要。',
+    '短内容测试 ResizeObserver。',
+    '这是一个包含很多文字的长内容，用于测试 ResizeObserver 如何处理动态内容变化。当内容发生变化时，组件应该能够自动重新测量高度并调整布局，这是非常重要的功能。'
+  ]
+  return contents[Math.floor(Math.random() * contents.length)]
+}
+
 // 添加项目
 function addItems() {
-  const newItems = generateItems(30)
+  const newItems = generateItems(15)
   items.value.push(...newItems)
+}
+
+// 添加动态项目
+function addDynamicItems() {
+  const newItems = generateDynamicItems(10)
+  items.value.push(...newItems)
+}
+
+// 切换图片显示
+function toggleImages() {
+  showImages.value = !showImages.value
+}
+
+// 强制重新测量
+function forceRemeasure() {
+  if (masonryRef.value) {
+    masonryRef.value.forceRemeasure()
+  }
+}
+
+// 切换展开状态
+function toggleExpand(itemId: string | number) {
+  const item = items.value.find(item => item.id === itemId)
+  if (item && 'expanded' in item) {
+    item.expanded = !item.expanded
+  }
 }
 
 // 清空项目
@@ -213,7 +339,7 @@ async function loadMore() {
   // 模拟网络延迟
   await new Promise(resolve => setTimeout(resolve, 20))
 
-  const newItems = generateItems(15)
+  const newItems = generateDynamicItems(10)
   items.value.push(...newItems)
 
   loading.value = false
@@ -368,62 +494,130 @@ onMounted(() => {
   min-height: calc(100vh - 160px);
 }
 
-/* 图片卡片样式 */
-.image-card {
-  position: relative;
-  border-radius: 12px;
-  overflow: hidden;
+/* 动态内容卡片样式 */
+.demo-card {
   background: white;
+  border-radius: 12px;
+  padding: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
   cursor: pointer;
 }
 
-.image-card:hover {
+.demo-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
 }
 
-.image-card img {
-  width: 100%;
-  height: auto;
-  display: block;
-  object-fit: cover;
-}
-
-.card-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
-  color: white;
-  padding: 16px;
-  transform: translateY(100%);
-  transition: transform 0.3s ease;
-}
-
-.image-card:hover .card-overlay {
-  transform: translateY(0);
-}
-
-.card-overlay h3 {
+.demo-card h3 {
   margin: 0 0 8px 0;
   font-size: 16px;
   font-weight: 600;
+  color: #333;
 }
 
-.card-overlay p {
-  margin: 0 0 8px 0;
+.demo-card p {
+  margin: 0 0 12px 0;
   font-size: 14px;
-  opacity: 0.9;
+  line-height: 1.5;
+  color: #666;
+}
+
+.card-image {
+  width: 100%;
+  border-radius: 8px;
+  margin: 12px 0;
+  display: block;
+}
+
+.extra-content {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: #555;
+  border-left: 4px solid #007bff;
+}
+
+.expandable-section {
+  margin-top: 12px;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+}
+
+.expand-btn {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.expand-btn:hover {
+  background: #0056b3;
+}
+
+.expanded-content {
+  margin-top: 12px;
+  padding: 12px;
+  background: #e7f3ff;
+  border-radius: 8px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 200px;
+  }
+}
+
+.expanded-content ul {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+}
+
+.expanded-content li {
+  margin: 4px 0;
+  font-size: 13px;
 }
 
 .card-meta {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  opacity: 0.7;
+  color: #888;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #218838;
+  transform: translateY(-1px);
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: #333;
+}
+
+.btn-warning:hover {
+  background: #e0a800;
+  transform: translateY(-1px);
 }
 
 /* 加载指示器 */
