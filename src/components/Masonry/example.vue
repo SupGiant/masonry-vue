@@ -23,6 +23,11 @@
           </div>
 
           <div class="control-item">
+            <label>最大列数:</label>
+            <input v-model.number="maxCols" type="number" min="1" max="15" />
+          </div>
+
+          <div class="control-item">
             <label>
               <input v-model="virtualize" type="checkbox" />
               虚拟滚动
@@ -41,6 +46,14 @@
             <button @click="clearItems" class="btn btn-secondary">清空</button>
             <button @click="reflow" class="btn btn-secondary">重新布局</button>
           </div>
+
+          <!-- 调试信息 -->
+          <div class="debug-info">
+            <span>当前列数: {{ masonryRef?.columnCount || 0 }}</span>
+            <span>实际列宽: {{ masonryRef?.actualColumnWidth?.toFixed(0) || 0 }}px</span>
+            <span>容器宽度: {{ masonryRef?.containerWidth || 0 }}px</span>
+            <span>可见元素: {{ masonryRef?.visibleItemsCount || 0 }}/{{ items.length }}</span>
+          </div>
         </div>
       </div>
     </header>
@@ -53,6 +66,7 @@
         :column-width="columnWidth"
         :gutter="gutter"
         :min-cols="minCols"
+        :max-cols="maxCols"
         :virtualize="virtualize"
         @load-more="loadMore"
         class="masonry-wrapper"
@@ -109,6 +123,7 @@ const masonryRef = ref()
 const columnWidth = ref(240)
 const gutter = ref(16)
 const minCols = ref(3)
+const maxCols = ref(8)
 const virtualize = ref(true)
 const enableInfiniteScroll = ref(true)
 
@@ -297,6 +312,17 @@ onMounted(() => {
 .control-actions {
   display: flex;
   gap: 8px;
+}
+
+.debug-info {
+  display: flex;
+  gap: 16px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  color: #666;
 }
 
 .btn {

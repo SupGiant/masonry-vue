@@ -31,6 +31,7 @@ interface Props {
   columnWidth?: number
   gutter?: number
   minCols?: number
+  maxCols?: number
   virtualize?: boolean
   virtualBufferFactor?: number
 }
@@ -39,6 +40,7 @@ const props = withDefaults(defineProps<Props>(), {
   columnWidth: 240,
   gutter: 16,
   minCols: 3,
+  maxCols: 8,
   virtualize: false,
   virtualBufferFactor: 0.7
 })
@@ -59,19 +61,33 @@ const state = reactive({
   positions: new Map<string | number, { top: number; left: number; width: number; height: number }>()
 })
 
-// 计算列数
+// 计算列数 - columnWidth作为最小宽度
 const columnCount = computed(() => {
   if (!state.containerWidth) return props.minCols
+
+  // 计算基于最小列宽的最大可能列数
+  const maxPossibleCols = Math.floor(state.containerWidth / (props.columnWidth + props.gutter))
+
+  // 在最小和最大列数之间取值
   return Math.max(
-    Math.floor(state.containerWidth / (props.columnWidth + props.gutter)),
+    Math.min(maxPossibleCols, props.maxCols),
     props.minCols
   )
 })
 
-// 计算实际列宽
+// 计算实际列宽 - 基于列数重新分配剩余空间
 const actualColumnWidth = computed(() => {
   if (!state.containerWidth || !columnCount.value) return props.columnWidth
-  return (state.containerWidth - (columnCount.value - 1) * props.gutter) / columnCount.value
+
+  // 计算总的间距宽度
+  const totalGutterWidth = (columnCount.value - 1) * props.gutter
+  // 可用于列的宽度
+  const availableWidth = state.containerWidth - totalGutterWidth
+  // 实际列宽（均分剩余空间）
+  const calculatedWidth = availableWidth / columnCount.value
+
+  // 确保列宽不小于最小值
+  return Math.max(calculatedWidth, props.columnWidth)
 })
 
 // 计算布局 - 仿照React原版逻辑
@@ -294,7 +310,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', debouncedResize)
 })
 
-// 暴露方法
+// 暴露方法和调试信息
 defineExpose({
   reflow: () => {
     state.itemHeights.clear()
@@ -303,7 +319,12 @@ defineExpose({
       updateContainerSize()
       calculateLayout()
     })
-  }
+  },
+  // 调试信息
+  columnCount,
+  actualColumnWidth,
+  containerWidth: computed(() => state.containerWidth),
+  visibleItemsCount: computed(() => visibleItems.value.length)
 })
 </script>
 
