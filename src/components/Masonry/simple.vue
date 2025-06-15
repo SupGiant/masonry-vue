@@ -38,8 +38,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   columnWidth: 240,
-  gutter: 16,
-  minCols: 2,
+  gutter: 2,
+  minCols: 3,
   virtualize: false,
   bufferSize: 5
 })

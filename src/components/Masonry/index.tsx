@@ -285,7 +285,7 @@ interface BasicLayoutResult {
 }
 
 /**
- * 基础瀑布流布局算法
+ * 基础瀑布流布局算法 - 支持增量布局
  * @param params 布局参数
  */
 export function createBasicLayout(params: LayoutParams) {
@@ -313,9 +313,6 @@ export function createBasicLayout(params: LayoutParams) {
       minCols
     })
 
-    // 初始化各列高度
-    const heights = Array(columnCount).fill(0)
-
     // 计算中心偏移量
     const centerOffset = getCenterOffset({
       align,
@@ -327,7 +324,83 @@ export function createBasicLayout(params: LayoutParams) {
       width
     })
 
+    // 初始化各列高度
+    const heights = Array(columnCount).fill(0)
+
     return items.map(item => {
+      const itemHeight = measurementStore.get(item)
+
+      if (itemHeight == null) {
+        return createDefaultPosition(columnWidth)
+      }
+
+      // 找到最短列
+      const shortestColumnIndex = getShortestColumnIndex(heights)
+      const top = heights[shortestColumnIndex]
+      const left = shortestColumnIndex * columnWidthAndGutter + centerOffset
+
+      // 更新列高度
+      const heightWithGutter = itemHeight > 0 ? itemHeight + gutter : 0
+      heights[shortestColumnIndex] += heightWithGutter
+
+      const position: Position = {
+        top,
+        left,
+        width: columnWidth,
+        height: itemHeight
+      }
+
+      // 缓存位置信息
+      positionStore.set(item, position)
+
+      return position
+    })
+  }
+}
+
+/**
+ * 创建增量布局计算器 - 从已测量项目中恢复列高度状态
+ */
+export function createIncrementalLayout(params: {
+  calculator: (items: MasonryItem[]) => Position[]
+  measuredItems: MasonryItem[]
+  positionStore: PositionCache
+  measurementStore: MeasurementCache
+  columnWidth: number
+  gutter: number
+  width: number
+  minCols: number
+}) {
+  const { calculator, measuredItems, positionStore, measurementStore, columnWidth, gutter, width, minCols } = params
+
+  return function calculateIncrementalLayout(unmeasuredItems: MasonryItem[]): Position[] {
+    if (!width || unmeasuredItems.length === 0) {
+      return []
+    }
+
+    const columnWidthAndGutter = columnWidth + gutter
+    const columnCount = getColumnCount({ gutter, columnWidth, width, minCols })
+
+    // 从已测量项目中恢复列高度状态
+    const heights = Array(columnCount).fill(0)
+
+    measuredItems.forEach(item => {
+      const cachedPosition = positionStore.get(item)
+      if (cachedPosition && measurementStore.has(item)) {
+        // 计算该项目所在的列
+        const centerOffset = (width - columnWidthAndGutter * columnCount + gutter) / 2
+        const columnIndex = Math.round((cachedPosition.left - centerOffset) / columnWidthAndGutter)
+        if (columnIndex >= 0 && columnIndex < columnCount) {
+          const itemBottom = cachedPosition.top + cachedPosition.height + gutter
+          heights[columnIndex] = Math.max(heights[columnIndex], itemBottom)
+        }
+      }
+    })
+
+    // 基于恢复的列高度状态，计算未测量项目的位置
+    const centerOffset = (width - columnWidthAndGutter * columnCount + gutter) / 2
+
+    return unmeasuredItems.map(item => {
       const itemHeight = measurementStore.get(item)
 
       if (itemHeight == null) {
@@ -706,28 +779,50 @@ export default defineComponent({
      * 计算未测量的项目
      */
     const unmeasuredItems = computed(() => {
-      return props.items.filter(item => !measurementStore.has(item))
+      const unmeasured = props.items.filter(item => !measurementStore.has(item))
+      // 限制未测量项目数量，避免一次性处理太多
+      const batchSize = props.minCols || 5
+      return unmeasured.slice(0, batchSize)
     })
 
     /**
-     * 计算项目位置
+     * 计算项目位置 - 正确实现增量布局
      */
     const itemPositions = computed(() => {
       const calculator = layoutCalculator.value
       const measured = measuredItems.value
-      const unmeasured = unmeasuredItems.value.slice(0, props.minCols)
+      const unmeasured = unmeasuredItems.value
 
-      const measuredPositions = calculator(measured)
-      const unmeasuredPositions = calculator(unmeasured)
+      // 先计算已测量项目的位置（这会建立正确的列高度状态）
+      const measuredPositions = measured.length > 0 ? calculator(measured) : []
+
+      // 基于已测量项目的状态，继续计算未测量项目
+      // 这里需要从已测量项目中恢复列高度状态
+      let unmeasuredPositions: Position[] = []
+      if (unmeasured.length > 0) {
+                 // 创建一个新的布局计算器，它能够从已测量项目中恢复状态
+         const incrementalCalculator = createIncrementalLayout({
+           calculator,
+           measuredItems: measured,
+           positionStore,
+           measurementStore,
+           columnWidth: props.columnWidth,
+           gutter: props.gutter,
+           width: state.width,
+           minCols: props.minCols
+         })
+        unmeasuredPositions = incrementalCalculator(unmeasured)
+      }
 
       // 计算最大高度
-      if (measuredPositions.length > 0) {
-        const maxHeight = Math.max(
-          ...measuredPositions.map(pos => pos.top + pos.height),
-          unmeasured.length === 0 ? 0 : state.maxHeight
+      const allPositions = [...measuredPositions, ...unmeasuredPositions]
+      if (allPositions.length > 0) {
+        const currentMaxHeight = Math.max(
+          ...allPositions.map(pos => pos.top + pos.height),
+          0
         )
-        if (maxHeight !== state.maxHeight) {
-          state.maxHeight = maxHeight
+        if (currentMaxHeight !== state.maxHeight) {
+          state.maxHeight = currentMaxHeight
         }
       }
 
@@ -738,11 +833,26 @@ export default defineComponent({
     })
 
     /**
+     * 获取项目的实际渲染位置 - 优先使用缓存
+     */
+    function getItemPosition(item: MasonryItem, fallbackPosition: Position): Position {
+      // 优先使用 positionStore 中的缓存位置
+      const cachedPosition = positionStore.get(item)
+      return cachedPosition || fallbackPosition
+    }
+
+    /**
      * 检查元素是否在可视区域内（虚拟滚动）
      */
     function isItemVisible(position: Position): boolean {
       if (!props.virtualize || !props.virtualBufferFactor) {
         return true
+      }
+
+      // 避免无限循环：如果位置无效，直接返回 false
+      if (position.top === Infinity || position.left === Infinity ||
+          position.top < 0 || position.left < 0) {
+        return false
       }
 
       const bufferHeight = state.containerHeight * props.virtualBufferFactor
@@ -761,8 +871,18 @@ export default defineComponent({
      * 渲染瀑布流项目
      */
     function renderMasonryItem(item: MasonryItem, index: number, position: Position, isMeasuring: boolean = false) {
+      // 避免渲染无效位置的项目
+      if (position.top === Infinity || position.left === Infinity) {
+        return null
+      }
+
       const shouldVirtualize = typeof props.virtualize === 'function' ? props.virtualize(item) : props.virtualize
       const isVisible = shouldVirtualize ? isItemVisible(position) : true
+
+      // 虚拟滚动：如果不可见且不是测量模式，直接返回 null
+      if (shouldVirtualize && !isVisible && !isMeasuring) {
+        return null
+      }
 
       const isRTL = document.dir === 'rtl'
 
@@ -783,7 +903,7 @@ export default defineComponent({
         isMeasuring
       })
 
-      return shouldVirtualize && !isVisible ? null : (
+      return (
         <div
           key={`item-${index}`}
           class="masonry-item"
@@ -791,12 +911,12 @@ export default defineComponent({
           data-grid-item-idx={index}
           role="listitem"
           style={itemStyle}
-                     ref={(el: any) => {
-             // 处理高度测量
-             if (el && isMeasuring) {
-               measurementStore.set(item, (el as HTMLElement).clientHeight)
-             }
-           }}
+          ref={(el: any) => {
+            // 处理高度测量
+            if (el && isMeasuring) {
+              measurementStore.set(item, (el as HTMLElement).clientHeight)
+            }
+          }}
         >
           {content}
         </div>
@@ -836,7 +956,7 @@ export default defineComponent({
       measureContainer()
     }
 
-    // 监听器
+    // 监听器 - 优化重新计算逻辑
     watch(() => props.items, (newItems, oldItems) => {
       // 检查是否有新的未测量项目
       const hasPendingMeasurements = newItems.some(item => !!item && !measurementStore.has(item))
@@ -845,6 +965,15 @@ export default defineComponent({
       // 重置获取状态
       if (newItems.length !== oldItems?.length) {
         state.isFetching = false
+      }
+
+      // 只有在项目数量减少时才重置缓存（比如清空数据）
+      if (oldItems && newItems.length < oldItems.length) {
+        // 检查是否是完全清空
+        if (newItems.length === 0) {
+          measurementStore.reset()
+          positionStore.reset()
+        }
       }
     }, { deep: true })
 
@@ -928,12 +1057,15 @@ export default defineComponent({
       state,
       itemPositions,
       renderMasonryItem,
-      updateScrollPosition
+      updateScrollPosition,
+      getItemPosition,
+      measurementStore,
+      positionStore
     }
   },
 
-    render() {
-    const { state, itemPositions, renderMasonryItem } = this
+  render() {
+    const { state, itemPositions, renderMasonryItem, getItemPosition } = this
     const { measured, unmeasured } = itemPositions
 
     // 如果没有宽度且有待测量项目，渲染测量模式
@@ -956,7 +1088,7 @@ export default defineComponent({
                 key={index}
                 ref={(el: any) => {
                   if (el && this.$props.layout !== 'flexible') {
-                    this.measurementStore.set(item, (el as HTMLElement).clientHeight)
+                    this.measurementStore?.set(item, (el as HTMLElement).clientHeight)
                   }
                 }}
                 class="masonry-item-static"
@@ -1013,18 +1145,31 @@ export default defineComponent({
             width: state.width + 'px'
           }}
         >
-          {/* 渲染已测量的项目 */}
-          {this.$props.items.filter((item: MasonryItem) => this.measurementStore.has(item)).map((item: MasonryItem, index: number) => {
-            const position = this.positionStore.get(item) ?? measured[index]
-            return position ? renderMasonryItem(item, index, position) : null
+          {/* 渲染已测量的项目 - 优先使用缓存位置 */}
+          {this.$props.items.filter((item: MasonryItem) => this.measurementStore?.has(item)).map((item: MasonryItem, measureIdx: number) => {
+            // 找到该项目在原始数组中的索引
+            const originalIndex = this.$props.items.indexOf(item)
+            const fallbackPosition = measured[measureIdx]
+
+            if (!fallbackPosition) return null
+
+            // 优先使用缓存位置
+            const actualPosition = getItemPosition(item, fallbackPosition)
+
+            return renderMasonryItem(item, originalIndex, actualPosition)
           })}
 
-                    {/* 渲染未测量的项目（用于测量） */}
-          {unmeasured.map((position: Position, index: number) => {
-            const itemIndex = this.$props.items.length - unmeasured.length + index
-            const item = this.$props.items[itemIndex]
+          {/* 渲染未测量的项目（用于测量） */}
+          {unmeasured.map((position: Position, unmeasureIdx: number) => {
+            // 找到对应的未测量项目
+            const unmeasuredItems = this.$props.items.filter(item => !this.measurementStore?.has(item))
+            const item = unmeasuredItems[unmeasureIdx]
 
-            return (item && renderMasonryItem) ? renderMasonryItem(item, itemIndex, position, true) : null
+            if (!item) return null
+
+            const originalIndex = this.$props.items.indexOf(item)
+
+            return renderMasonryItem(item, originalIndex, position, true)
           })}
         </div>
 

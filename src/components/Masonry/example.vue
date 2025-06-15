@@ -108,8 +108,8 @@ const masonryRef = ref()
 // 配置参数
 const columnWidth = ref(240)
 const gutter = ref(16)
-const minCols = ref(2)
-const virtualize = ref(true)
+const minCols = ref(3)
+const virtualize = ref(false)
 const enableInfiniteScroll = ref(true)
 
 // 数据状态
