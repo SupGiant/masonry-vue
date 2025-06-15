@@ -209,9 +209,10 @@ function onImageLoad(event: Event) {
   // 图片加载完成后，可能需要重新计算布局
   if (masonryRef.value) {
     // 小延迟确保图片完全渲染
-    setTimeout(() => {
-      masonryRef.value.reflow()
-    }, 100)
+    // 这里导致全局重拍，性能非常的差
+    // setTimeout(() => {
+    //   masonryRef.value.reflow()
+    // }, 100)
   }
 }
 
