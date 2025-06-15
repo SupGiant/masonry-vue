@@ -109,7 +109,7 @@ const masonryRef = ref()
 const columnWidth = ref(240)
 const gutter = ref(16)
 const minCols = ref(3)
-const virtualize = ref(false)
+const virtualize = ref(true)
 const enableInfiniteScroll = ref(true)
 
 // 数据状态
