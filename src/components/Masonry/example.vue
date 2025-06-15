@@ -56,8 +56,10 @@
           </div>
 
           <div class="control-actions">
-            <button @click="addItems" class="btn btn-primary">添加内容</button>
-            <button @click="addDynamicItems" class="btn btn-primary">添加动态内容</button>
+            <button @click="addMixedItems" class="btn btn-primary">添加混合内容</button>
+            <button @click="addImageItems" class="btn btn-secondary">添加图片</button>
+            <button @click="addGifItems" class="btn btn-success">添加GIF</button>
+            <button @click="addTextImageItems" class="btn btn-info">添加图文</button>
 
             <button @click="clearItems" class="btn btn-secondary">清空</button>
             <button @click="reflow" class="btn btn-secondary">重新布局</button>
@@ -70,9 +72,7 @@
             <span>实际列宽: {{ masonryRef?.actualColumnWidth?.toFixed(0) || 0 }}px</span>
             <span>容器宽度: {{ masonryRef?.containerWidth || 0 }}px</span>
             <span>可见元素: {{ masonryRef?.visibleItemsCount || 0 }}/{{ items.length }}</span>
-            <span>已测量: {{ masonryRef?.measuredItemsCount || 0 }}</span>
-            <span>完全测量: {{ masonryRef?.fullyMeasuredItemsCount || 0 }}</span>
-            <span>图片状态: 加载{{ masonryRef?.imageLoadStatesCount?.loaded || 0 }}/错误{{ masonryRef?.imageLoadStatesCount?.error || 0 }}</span>
+            <span>图片: {{ imageCount }}/GIF: {{ gifCount }}/图文: {{ textImageCount }}</span>
             <span>待处理: {{ masonryRef?.hasPendingMeasurements ? '是' : '否' }}</span>
           </div>
         </div>
@@ -94,40 +94,37 @@
         @load-more="loadMore"
         class="masonry-wrapper"
       >
-        <template #item="{ item, index }">
-          <div class="demo-card" :class="{ 'has-preset-height': item.height }">
-            <!-- 图片容器 -->
-            <div class="image-container">
-              <img
-                :src="item.imageUrl"
-                :alt="item.title"
-                @load="() => onImageLoad(item.id)"
-                @error="() => onImageError(item.id)"
-                class="card-image"
-              />
+                <template #item="{ item, index }">
+          <!-- 普通图片组件 -->
+          <ImageCard
+            v-if="(item as DemoItem).itemType === 'image'"
+            :item="item as DemoItem"
+            @image-load="onImageLoad"
+            @image-error="onImageError"
+          />
 
-              <!-- 覆盖在图片上的内容 -->
-              <div class="overlay-content">
+          <!-- GIF组件 -->
+          <GifCard
+            v-else-if="(item as DemoItem).itemType === 'gif'"
+            :item="item as DemoItem"
+            @image-load="onImageLoad"
+            @image-error="onImageError"
+          />
 
-                <!-- 底部信息 -->
-                <div class="card-footer">
-                  <div class="card-meta">
-                    <span class="type-badge" :class="item.height ? 'preset' : 'dynamic'">
-                      {{ item.type || '普通' }}
-                    </span>
-                    <span class="item-id">ID: {{ item.id }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <!-- 图文组件 -->
+          <TextImageCard
+            v-else-if="(item as DemoItem).itemType === 'textImage'"
+            :item="item as DemoItem"
+            @image-load="onImageLoad"
+            @image-error="onImageError"
+          />
         </template>
       </SimpleMasonry>
 
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-indicator">
         <div class="spinner"></div>
-        <span>正在加载更多图片...</span>
+        <span>正在加载更多内容...</span>
       </div>
 
       <!-- 空状态 -->
@@ -135,8 +132,12 @@
         <div class="empty-content">
           <div class="empty-icon">🧱</div>
           <h3>暂无内容</h3>
-          <p>点击"添加内容"按钮开始测试动态高度测量</p>
-          <button @click="addDynamicItems" class="btn btn-primary">添加动态内容</button>
+          <p>点击按钮开始测试瀑布流布局和各种内容类型效果</p>
+          <div class="empty-actions">
+            <button @click="addMixedItems" class="btn btn-primary">添加混合内容</button>
+            <button @click="addGifItems" class="btn btn-success">添加GIF动画</button>
+            <button @click="addTextImageItems" class="btn btn-info">添加图文内容</button>
+          </div>
         </div>
       </div>
     </main>
@@ -144,9 +145,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import SimpleMasonry from './simple.vue'
 import type { MasonryItem } from './simple.vue'
+import ImageCard from './ImageCard.vue'
+import GifCard from './GifCard.vue'
+import TextImageCard from './TextImageCard.vue'
 
 interface DemoItem extends MasonryItem {
   title: string
@@ -156,10 +160,14 @@ interface DemoItem extends MasonryItem {
   height?: number
   category?: string
   imageUrl?: string
-  extraContent?: string
-  expandable?: boolean
-  expanded?: boolean
   timestamp: number
+  itemType: 'image' | 'gif' | 'textImage'
+  // GIF特有字段
+  originalGifUrl?: string
+  // 图文特有字段
+  subtitle?: string
+  extraTextList?: string[]
+  tags?: string[]
 }
 
 // 组件引用
@@ -180,6 +188,92 @@ const items = ref<DemoItem[]>([])
 const loading = ref(false)
 let itemIdCounter = 0
 
+// 计算属性
+const imageCount = computed(() => items.value.filter(item => item.itemType === 'image').length)
+const gifCount = computed(() => items.value.filter(item => item.itemType === 'gif').length)
+const textImageCount = computed(() => items.value.filter(item => item.itemType === 'textImage').length)
+
+// GIF资源池
+const GIF_SOURCES = [
+  {
+    gifUrl: 'https://media.giphy.com/media/26BRrSvJUa0crqw4E/giphy.gif',
+    title: '彩虹动画',
+    category: 'abstract'
+  },
+  {
+    gifUrl: 'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif',
+    title: '火焰动效',
+    category: 'abstract'
+  },
+  {
+    gifUrl: 'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
+    title: '粒子动效',
+    category: 'technology'
+  },
+  {
+    gifUrl: 'https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif',
+    title: '水波动画',
+    category: 'nature'
+  },
+  {
+    gifUrl: 'https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif',
+    title: '光效动画',
+    category: 'abstract'
+  }
+]
+
+// 文字内容模板库
+const TEXT_TEMPLATES = [
+  {
+    title: '产品介绍',
+    subtitles: ['创新设计', '技术突破', '用户体验', '市场领先'],
+    contents: [
+      '这是一款革命性的产品，采用最新的技术架构，为用户带来前所未有的体验。我们的团队经过多年的研发，终于推出了这个令人兴奋的解决方案。',
+      '产品的核心理念是简单易用，同时保持强大的功能性。无论是初学者还是专业人士，都能够快速上手并发挥出最大的价值。'
+    ],
+    extraTexts: [
+      ['• 支持多平台部署', '• 云原生架构设计', '• 高可用性保障'],
+      ['• 用户友好的界面', '• 丰富的自定义选项', '• 强大的数据分析']
+    ],
+    tags: [
+      ['技术', '创新', '云计算'],
+      ['设计', '用户体验', 'UI/UX']
+    ]
+  },
+  {
+    title: '旅行日记',
+    subtitles: ['美好时光', '难忘回忆', '精彩瞬间', '旅途见闻'],
+    contents: [
+      '今天的旅行真是太棒了！我们探索了许多令人惊叹的地方，每一处风景都让人流连忘返。当地的文化和美食也给我们留下了深刻的印象。',
+      '在这次旅程中，我们不仅看到了壮丽的自然风光，还结识了许多友善的当地人。他们的热情好客让我们感受到了家的温暖。'
+    ],
+    extraTexts: [
+      ['🏔️ 壮丽的山川景色', '🏖️ 迷人的海滨风光', '🏛️ 古老的建筑文化'],
+      ['🍜 地道的当地美食', '🎭 精彩的文化表演', '🛍️ 有趣的购物体验']
+    ],
+    tags: [
+      ['旅行', '探索', '冒险'],
+      ['美食', '文化', '摄影']
+    ]
+  },
+  {
+    title: '学习心得',
+    subtitles: ['知识积累', '技能提升', '思维拓展', '成长感悟'],
+    contents: [
+      '学习是一个持续的过程，每天都有新的发现和收获。通过不断的实践和思考，我们能够逐步提升自己的能力和见识。',
+      '在学习的道路上，遇到困难是很正常的事情。重要的是要保持积极的心态，勇于面对挑战，从错误中吸取经验。'
+    ],
+    extraTexts: [
+      ['📚 系统性学习方法', '🎯 明确的学习目标', '⏰ 合理的时间规划'],
+      ['🤝 与他人分享交流', '💡 创新思维培养', '🔍 深入研究探索']
+    ],
+    tags: [
+      ['学习', '知识', '成长'],
+      ['思考', '实践', '总结']
+    ]
+  }
+]
+
 // 生成随机尺寸
 function getRandomDimensions() {
   const widths = [240, 300, 320, 400]
@@ -191,104 +285,164 @@ function getRandomDimensions() {
   }
 }
 
-// 生成随机颜色
-function getRandomColor() {
-  const colors = [
-    'FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FECA57',
-    'FF9FF3', '54A0FF', '5F27CD', '00D2D3', 'FF9F43',
-    '10AC84', 'EE5A24', '0984E3', '6C5CE7', 'A29BFE',
-    'FD79A8', 'E17055', '81ECEC', '74B9FF', '00B894'
-  ]
-  return colors[Math.floor(Math.random() * colors.length)]
-}
-
-// 生成随机类别
-function getRandomCategory() {
-  const categories = [
-    'nature', 'city', 'food', 'animals', 'technology',
-    'art', 'people', 'abstract', 'landscape', 'architecture'
-  ]
-  return categories[Math.floor(Math.random() * categories.length)]
-}
-
-// 生成内容数据
-function generateItems(count: number): DemoItem[] {
-  return Array.from({ length: count }, () => {
-    const { width, height } = getRandomDimensions()
-    const color = getRandomColor()
-    const category = getRandomCategory()
-    const id = ++itemIdCounter
-
-    // 50%的概率有预设高度
-    const hasPresetHeight = Math.random() > 0.5
-
-    return {
-      id,
-      title: `内容项目 #${id}`,
-      content: getRandomContent(),
-      type: hasPresetHeight ? '预设高度' : '动态高度',
-      width: columnWidth.value, // 使用当前列宽
-      height: hasPresetHeight ? height : undefined, // 只有一半有预设高度
-      category,
-      imageUrl: `https://picsum.photos/seed/${id}/${columnWidth.value}/${height}`,
-      timestamp: Date.now()
-    }
-  })
-}
-
-// 生成动态内容数据
-function generateDynamicItems(count: number): DemoItem[] {
-  return Array.from({ length: count }, () => {
-    const id = ++itemIdCounter
-    const hasExtra = Math.random() > 0.6
-    const isExpandable = Math.random() > 0.7
-    const imageHeight = 150 + Math.floor(Math.random() * 250)
-
-    // 30%的概率有预设高度
-    const hasPresetHeight = Math.random() > 0.7
-
-    return {
-      id,
-      title: `动态内容 #${id}`,
-      content: getRandomContent(),
-      type: hasPresetHeight ? '预设高度' : '动态高度',
-      width: columnWidth.value,
-      height: hasPresetHeight ? imageHeight : undefined,
-      extraContent: hasExtra ? '这是额外的动态内容，会影响高度测量' : undefined,
-      imageUrl: `https://picsum.photos/seed/${id}/${columnWidth.value}/${imageHeight}`,
-      expandable: isExpandable,
-      expanded: false,
-      timestamp: Date.now()
-    }
-  })
-}
-
 // 生成随机内容
 function getRandomContent(): string {
   const contents = [
     '这是一个短内容。',
     '这是一个稍长的内容，包含更多的文字来测试不同的高度。',
-    '这是一个很长的内容，用来测试瀑布流布局在处理不同高度内容时的表现。包含了多行文字，以及一些额外的描述信息。当内容高度发生变化时，ResizeObserver 会自动检测并重新计算布局。',
-    '中等长度的内容，用于展示自动高度测量的效果。这个功能对于动态内容非常重要。',
-    '短内容测试 ResizeObserver。',
-    '这是一个包含很多文字的长内容，用于测试 ResizeObserver 如何处理动态内容变化。当内容发生变化时，组件应该能够自动重新测量高度并调整布局，这是非常重要的功能。'
+    '这是一个很长的内容，用来测试瀑布流布局在处理不同高度内容时的表现。包含了多行文字，以及一些额外的描述信息。',
+    '中等长度的内容，用于展示自动高度测量的效果。这个功能对于动态内容非常重要。'
   ]
   return contents[Math.floor(Math.random() * contents.length)]
 }
 
-// 添加项目
-function addItems() {
-  const newItems = generateItems(15)
+// 添加混合内容
+function addMixedItems() {
+  const newItems: DemoItem[] = []
+
+  for (let i = 0; i < 12; i++) {
+    const randomType = Math.random()
+    const id = ++itemIdCounter
+
+    if (randomType < 0.4) {
+      // 普通图片
+      const { width, height } = getRandomDimensions()
+      const hasPresetHeight = Math.random() > 0.5
+
+      newItems.push({
+        id,
+        title: `图片内容 #${id}`,
+        content: getRandomContent(),
+        type: hasPresetHeight ? '预设高度' : '动态高度',
+        width: columnWidth.value,
+        height: hasPresetHeight ? height : undefined,
+        imageUrl: `https://picsum.photos/seed/${id}/${columnWidth.value}/${height}`,
+        timestamp: Date.now(),
+        itemType: 'image'
+      })
+    } else if (randomType < 0.7) {
+      // GIF
+      const gifSource = GIF_SOURCES[Math.floor(Math.random() * GIF_SOURCES.length)]
+      newItems.push({
+        id,
+        title: `GIF动画 #${id}`,
+        content: `这是一个${gifSource.title}的GIF动画，鼠标悬停播放`,
+        type: 'GIF动画',
+        width: columnWidth.value,
+        imageUrl: gifSource.gifUrl,
+        originalGifUrl: gifSource.gifUrl,
+        timestamp: Date.now(),
+        itemType: 'gif'
+      })
+    } else {
+      // 图文内容
+      const template = TEXT_TEMPLATES[Math.floor(Math.random() * TEXT_TEMPLATES.length)]
+      const subtitleIndex = Math.floor(Math.random() * template.subtitles.length)
+      const contentIndex = Math.floor(Math.random() * template.contents.length)
+      const extraTextIndex = Math.floor(Math.random() * template.extraTexts.length)
+      const tagIndex = Math.floor(Math.random() * template.tags.length)
+
+      const bgImageSeed = `text-bg-${id}`
+
+      newItems.push({
+        id,
+        title: `${template.title} #${id}`,
+        subtitle: template.subtitles[subtitleIndex],
+        content: template.contents[contentIndex],
+        type: '图文内容',
+        width: columnWidth.value,
+        imageUrl: `https://picsum.photos/seed/${bgImageSeed}/400/200`,
+        extraTextList: Math.random() > 0.6 ? template.extraTexts[extraTextIndex] : undefined,
+        tags: Math.random() > 0.4 ? template.tags[tagIndex] : undefined,
+        timestamp: Date.now(),
+        itemType: 'textImage'
+      })
+    }
+  }
+
   items.value.push(...newItems)
 }
 
-// 添加动态项目
-function addDynamicItems() {
-  const newItems = generateDynamicItems(10)
+// 添加纯图片内容
+function addImageItems() {
+  const newItems: DemoItem[] = []
+
+  for (let i = 0; i < 8; i++) {
+    const id = ++itemIdCounter
+    const { width, height } = getRandomDimensions()
+    const hasPresetHeight = Math.random() > 0.5
+
+    newItems.push({
+      id,
+      title: `图片内容 #${id}`,
+      content: getRandomContent(),
+      type: hasPresetHeight ? '预设高度' : '动态高度',
+      width: columnWidth.value,
+      height: hasPresetHeight ? height : undefined,
+      imageUrl: `https://picsum.photos/seed/${id}/${columnWidth.value}/${height}`,
+      timestamp: Date.now(),
+      itemType: 'image'
+    })
+  }
+
   items.value.push(...newItems)
 }
 
+// 添加GIF内容
+function addGifItems() {
+  const newItems: DemoItem[] = []
 
+  for (let i = 0; i < 6; i++) {
+    const id = ++itemIdCounter
+    const gifSource = GIF_SOURCES[Math.floor(Math.random() * GIF_SOURCES.length)]
+
+    newItems.push({
+      id,
+      title: `GIF动画 #${id}`,
+      content: `这是一个${gifSource.title}的GIF动画，鼠标悬停播放`,
+      type: 'GIF动画',
+      width: columnWidth.value,
+      imageUrl: gifSource.gifUrl,
+      originalGifUrl: gifSource.gifUrl,
+      timestamp: Date.now(),
+      itemType: 'gif'
+    })
+  }
+
+  items.value.push(...newItems)
+}
+
+// 添加图文内容
+function addTextImageItems() {
+  const newItems: DemoItem[] = []
+
+  for (let i = 0; i < 6; i++) {
+    const id = ++itemIdCounter
+    const template = TEXT_TEMPLATES[Math.floor(Math.random() * TEXT_TEMPLATES.length)]
+    const subtitleIndex = Math.floor(Math.random() * template.subtitles.length)
+    const contentIndex = Math.floor(Math.random() * template.contents.length)
+    const extraTextIndex = Math.floor(Math.random() * template.extraTexts.length)
+    const tagIndex = Math.floor(Math.random() * template.tags.length)
+
+    const bgImageSeed = `text-bg-${id}`
+
+    newItems.push({
+      id,
+      title: `${template.title} #${id}`,
+      subtitle: template.subtitles[subtitleIndex],
+      content: template.contents[contentIndex],
+      type: '图文内容',
+      width: columnWidth.value,
+      imageUrl: `https://picsum.photos/seed/${bgImageSeed}/400/200`,
+      extraTextList: Math.random() > 0.6 ? template.extraTexts[extraTextIndex] : undefined,
+      tags: Math.random() > 0.4 ? template.tags[tagIndex] : undefined,
+      timestamp: Date.now(),
+      itemType: 'textImage'
+    })
+  }
+
+  items.value.push(...newItems)
+}
 
 // 强制重新测量
 function forceRemeasure() {
@@ -299,10 +453,7 @@ function forceRemeasure() {
 
 // 切换展开状态
 function toggleExpand(itemId: string | number) {
-  const item = items.value.find(item => item.id === itemId)
-  if (item && 'expanded' in item) {
-    item.expanded = !item.expanded
-  }
+  // 已移除展开功能
 }
 
 // 清空项目
@@ -327,8 +478,7 @@ async function loadMore() {
   // 模拟网络延迟
   await new Promise(resolve => setTimeout(resolve, 20))
 
-  const newItems = generateDynamicItems(10)
-  items.value.push(...newItems)
+  addMixedItems()
 
   loading.value = false
 }
@@ -352,7 +502,7 @@ function onImageError(itemId: string | number) {
 
 // 初始化
 onMounted(() => {
-  addItems()
+  addMixedItems()
 })
 </script>
 
@@ -469,195 +619,6 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
-/* 主内容区 */
-.main-content {
-  padding-top: 140px; /* 为固定头部留出空间 */
-  padding-left: 20px;
-  padding-right: 20px;
-  padding-bottom: 40px;
-  width: 100%;
-}
-
-.masonry-wrapper {
-  min-height: calc(100vh - 160px);
-}
-
-/* 动态内容卡片样式 */
-.demo-card {
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-  cursor: pointer;
-  position: relative;
-}
-
-.demo-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-}
-
-.image-container {
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-}
-
-.card-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 0.3s ease;
-}
-
-.demo-card:hover .card-image {
-  transform: scale(1.05);
-}
-
-/* 覆盖内容 */
-.overlay-content {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.3) 0%,
-    rgba(0, 0, 0, 0.1) 50%,
-    rgba(0, 0, 0, 0.7) 100%
-  );
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 16px;
-  color: white;
-}
-
-.overlay-text h3 {
-  margin: 0 0 8px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.overlay-text p {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  line-height: 1.4;
-  color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.extra-content {
-  background: rgba(255, 255, 255, 0.2);
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin: 8px 0;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-  border-left: 3px solid rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(5px);
-}
-
-/* 底部区域 */
-.card-footer {
-  margin-top: auto;
-}
-
-.expandable-section {
-  margin-top: 8px;
-}
-
-.expand-btn {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.2s;
-  backdrop-filter: blur(5px);
-}
-
-.expand-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-.expanded-content {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.9);
-  color: white;
-  padding: 16px;
-  border-radius: 0 0 12px 12px;
-  backdrop-filter: blur(10px);
-  animation: slideUp 0.3s ease;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.expanded-content ul {
-  margin: 8px 0 0 0;
-  padding-left: 20px;
-}
-
-.expanded-content li {
-  margin: 4px 0;
-  font-size: 13px;
-}
-
-.card-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 8px;
-}
-
-.type-badge {
-  background: rgba(255, 255, 255, 0.2);
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 500;
-  backdrop-filter: blur(5px);
-}
-
-.type-badge.preset {
-  background: rgba(76, 175, 80, 0.3);
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.type-badge.dynamic {
-  background: rgba(255, 193, 7, 0.3);
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.item-id {
-  opacity: 0.7;
-}
-
 .btn-success {
   background: #28a745;
   color: white;
@@ -665,6 +626,16 @@ onMounted(() => {
 
 .btn-success:hover {
   background: #218838;
+  transform: translateY(-1px);
+}
+
+.btn-info {
+  background: #17a2b8;
+  color: white;
+}
+
+.btn-info:hover {
+  background: #138496;
   transform: translateY(-1px);
 }
 
@@ -676,6 +647,19 @@ onMounted(() => {
 .btn-warning:hover {
   background: #e0a800;
   transform: translateY(-1px);
+}
+
+/* 主内容区 */
+.main-content {
+  padding-top: 140px; /* 为固定头部留出空间 */
+  padding-left: 20px;
+  padding-right: 20px;
+  padding-bottom: 40px;
+  width: 100%;
+}
+
+.masonry-wrapper {
+  min-height: calc(100vh - 160px);
 }
 
 /* 加载指示器 */
@@ -733,6 +717,12 @@ onMounted(() => {
   opacity: 0.8;
 }
 
+.empty-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .header-content {
@@ -767,6 +757,10 @@ onMounted(() => {
   .btn {
     padding: 6px 12px;
     font-size: 13px;
+  }
+
+  .empty-actions {
+    flex-direction: column;
   }
 }
 
