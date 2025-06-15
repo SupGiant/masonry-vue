@@ -58,7 +58,7 @@
           <div class="control-actions">
             <button @click="addItems" class="btn btn-primary">添加内容</button>
             <button @click="addDynamicItems" class="btn btn-primary">添加动态内容</button>
-            <button @click="toggleImages" class="btn btn-success">切换图片</button>
+
             <button @click="clearItems" class="btn btn-secondary">清空</button>
             <button @click="reflow" class="btn btn-secondary">重新布局</button>
             <button @click="forceRemeasure" class="btn btn-warning">强制重测</button>
@@ -71,7 +71,8 @@
             <span>容器宽度: {{ masonryRef?.containerWidth || 0 }}px</span>
             <span>可见元素: {{ masonryRef?.visibleItemsCount || 0 }}/{{ items.length }}</span>
             <span>已测量: {{ masonryRef?.measuredItemsCount || 0 }}</span>
-            <span>未测量: {{ masonryRef?.unmeasuredItemsCount || 0 }}</span>
+            <span>完全测量: {{ masonryRef?.fullyMeasuredItemsCount || 0 }}</span>
+            <span>图片状态: 加载{{ masonryRef?.imageLoadStatesCount?.loaded || 0 }}/错误{{ masonryRef?.imageLoadStatesCount?.error || 0 }}</span>
             <span>待处理: {{ masonryRef?.hasPendingMeasurements ? '是' : '否' }}</span>
           </div>
         </div>
@@ -94,47 +95,30 @@
         class="masonry-wrapper"
       >
         <template #item="{ item, index }">
-          <div class="demo-card" :class="{ 'has-image': item.imageUrl && showImages }">
-            <h3>{{ item.title }}</h3>
-            <p>{{ item.content }}</p>
+          <div class="demo-card" :class="{ 'has-preset-height': item.height }">
+            <!-- 图片容器 -->
+            <div class="image-container">
+              <img
+                :src="item.imageUrl"
+                :alt="item.title"
+                @load="() => onImageLoad(item.id)"
+                @error="() => onImageError(item.id)"
+                class="card-image"
+              />
 
-            <!-- 动态图片 -->
-            <img
-              v-if="item.imageUrl && showImages"
-              :src="item.imageUrl"
-              :alt="item.title"
-              @load="onImageLoad"
-              @error="onImageError"
-              class="card-image"
-            />
+              <!-- 覆盖在图片上的内容 -->
+              <div class="overlay-content">
 
-            <!-- 动态内容 -->
-            <div v-if="item.extraContent" class="extra-content">
-              {{ item.extraContent }}
-            </div>
-
-            <!-- 可展开的详情 -->
-            <div v-if="item.expandable" class="expandable-section">
-              <button
-                @click="toggleExpand(item.id)"
-                class="expand-btn"
-              >
-                {{ item.expanded ? '收起' : '展开' }}详情
-              </button>
-
-              <div v-if="item.expanded" class="expanded-content">
-                <p>这是展开的内容，会动态改变卡片高度。</p>
-                <ul>
-                  <li>动态高度测量</li>
-                  <li>ResizeObserver 监听</li>
-                  <li>自动重新布局</li>
-                </ul>
+                <!-- 底部信息 -->
+                <div class="card-footer">
+                  <div class="card-meta">
+                    <span class="type-badge" :class="item.height ? 'preset' : 'dynamic'">
+                      {{ item.type || '普通' }}
+                    </span>
+                    <span class="item-id">ID: {{ item.id }}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-
-            <div class="card-meta">
-              <span>类型: {{ item.type || '普通' }}</span>
-              <span>ID: {{ item.id }}</span>
             </div>
           </div>
         </template>
@@ -190,7 +174,6 @@ const virtualize = ref(true)
 const enableInfiniteScroll = ref(true)
 const dynamicHeights = ref(true)
 const useRAF = ref(true)
-const showImages = ref(false)
 
 // 数据状态
 const items = ref<DemoItem[]>([])
@@ -236,15 +219,18 @@ function generateItems(count: number): DemoItem[] {
     const category = getRandomCategory()
     const id = ++itemIdCounter
 
+    // 50%的概率有预设高度
+    const hasPresetHeight = Math.random() > 0.5
+
     return {
       id,
       title: `内容项目 #${id}`,
       content: getRandomContent(),
-      type: '普通',
-      width,
-      height,
+      type: hasPresetHeight ? '预设高度' : '动态高度',
+      width: columnWidth.value, // 使用当前列宽
+      height: hasPresetHeight ? height : undefined, // 只有一半有预设高度
       category,
-      imageUrl: `https://picsum.photos/seed/${id}/${width}/${height}`,
+      imageUrl: `https://picsum.photos/seed/${id}/${columnWidth.value}/${height}`,
       timestamp: Date.now()
     }
   })
@@ -255,16 +241,21 @@ function generateDynamicItems(count: number): DemoItem[] {
   return Array.from({ length: count }, () => {
     const id = ++itemIdCounter
     const hasExtra = Math.random() > 0.6
-    const hasImage = Math.random() > 0.5
     const isExpandable = Math.random() > 0.7
+    const imageHeight = 150 + Math.floor(Math.random() * 250)
+
+    // 30%的概率有预设高度
+    const hasPresetHeight = Math.random() > 0.7
 
     return {
       id,
       title: `动态内容 #${id}`,
       content: getRandomContent(),
-      type: '动态',
+      type: hasPresetHeight ? '预设高度' : '动态高度',
+      width: columnWidth.value,
+      height: hasPresetHeight ? imageHeight : undefined,
       extraContent: hasExtra ? '这是额外的动态内容，会影响高度测量' : undefined,
-      imageUrl: hasImage ? `https://picsum.photos/seed/${id}/300/${150 + Math.floor(Math.random() * 200)}` : undefined,
+      imageUrl: `https://picsum.photos/seed/${id}/${columnWidth.value}/${imageHeight}`,
       expandable: isExpandable,
       expanded: false,
       timestamp: Date.now()
@@ -297,10 +288,7 @@ function addDynamicItems() {
   items.value.push(...newItems)
 }
 
-// 切换图片显示
-function toggleImages() {
-  showImages.value = !showImages.value
-}
+
 
 // 强制重新测量
 function forceRemeasure() {
@@ -346,20 +334,20 @@ async function loadMore() {
 }
 
 // 图片加载完成
-function onImageLoad(event: Event) {
-  // 图片加载完成后，可能需要重新计算布局
-  if (masonryRef.value) {
-    // 小延迟确保图片完全渲染
-    // 这里导致全局重拍，性能非常的差
-    // setTimeout(() => {
-    //   masonryRef.value.reflow()
-    // }, 100)
+function onImageLoad(itemId: string | number) {
+  // 通知瀑布流组件图片已加载
+  if (masonryRef.value && masonryRef.value.handleImageLoad) {
+    masonryRef.value.handleImageLoad(itemId)
   }
 }
 
 // 图片加载错误
-function onImageError(event: Event) {
-  console.warn('图片加载失败:', event.target)
+function onImageError(itemId: string | number) {
+  console.warn('图片加载失败, item ID:', itemId)
+  // 通知瀑布流组件图片加载失败
+  if (masonryRef.value && masonryRef.value.handleImageError) {
+    masonryRef.value.handleImageError(itemId)
+  }
 }
 
 // 初始化
@@ -496,12 +484,12 @@ onMounted(() => {
 
 /* 动态内容卡片样式 */
 .demo-card {
-  background: white;
   border-radius: 12px;
-  padding: 16px;
+  overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
   cursor: pointer;
+  position: relative;
 }
 
 .demo-card:hover {
@@ -509,74 +497,122 @@ onMounted(() => {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
 }
 
-.demo-card h3 {
-  margin: 0 0 8px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
-.demo-card p {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #666;
+.image-container {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
 }
 
 .card-image {
   width: 100%;
-  border-radius: 8px;
-  margin: 12px 0;
+  height: 100%;
+  object-fit: cover;
   display: block;
+  transition: transform 0.3s ease;
+}
+
+.demo-card:hover .card-image {
+  transform: scale(1.05);
+}
+
+/* 覆盖内容 */
+.overlay-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.1) 50%,
+    rgba(0, 0, 0, 0.7) 100%
+  );
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  color: white;
+}
+
+.overlay-text h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.overlay-text p {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .extra-content {
-  background: #f8f9fa;
-  padding: 12px;
-  border-radius: 8px;
-  margin: 12px 0;
-  font-size: 14px;
-  color: #555;
-  border-left: 4px solid #007bff;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  border-left: 3px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(5px);
+}
+
+/* 底部区域 */
+.card-footer {
+  margin-top: auto;
 }
 
 .expandable-section {
-  margin-top: 12px;
-  border-top: 1px solid #eee;
-  padding-top: 12px;
+  margin-top: 8px;
 }
 
 .expand-btn {
-  background: #007bff;
+  background: rgba(255, 255, 255, 0.2);
   color: white;
   border: none;
   padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 6px;
+  font-size: 11px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
+  backdrop-filter: blur(5px);
 }
 
 .expand-btn:hover {
-  background: #0056b3;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
 }
 
 .expanded-content {
-  margin-top: 12px;
-  padding: 12px;
-  background: #e7f3ff;
-  border-radius: 8px;
-  animation: slideDown 0.3s ease;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 16px;
+  border-radius: 0 0 12px 12px;
+  backdrop-filter: blur(10px);
+  animation: slideUp 0.3s ease;
 }
 
-@keyframes slideDown {
+@keyframes slideUp {
   from {
     opacity: 0;
-    max-height: 0;
+    transform: translateY(100%);
   }
   to {
     opacity: 1;
-    max-height: 200px;
+    transform: translateY(0);
   }
 }
 
@@ -593,11 +629,33 @@ onMounted(() => {
 .card-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  color: #888;
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
+  align-items: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 8px;
+}
+
+.type-badge {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  backdrop-filter: blur(5px);
+}
+
+.type-badge.preset {
+  background: rgba(76, 175, 80, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.type-badge.dynamic {
+  background: rgba(255, 193, 7, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.item-id {
+  opacity: 0.7;
 }
 
 .btn-success {

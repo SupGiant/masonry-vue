@@ -76,7 +76,11 @@ const state = reactive({
   // 新增：是否有待处理的测量
   hasPendingMeasurements: false,
   // 新增：是否正在测量中
-  isMeasuring: false
+  isMeasuring: false,
+  // 新增：图片加载状态缓存
+  imageLoadStates: new Map<string | number, 'loading' | 'loaded' | 'error'>(),
+  // 新增：已完全测量的项目集合（包括图片加载完成）
+  fullyMeasuredItems: new Set<string | number>()
 })
 
 // 计算列数 - columnWidth作为最小宽度
@@ -119,8 +123,14 @@ function calculateLayout() {
 
   props.items.forEach((item) => {
     const itemHeight = state.itemHeights.get(item.id)
-    if (itemHeight && itemHeight > 0) {
+    // 如果item有预设高度，使用预设高度
+    const presetHeight = (item as any).height
+    if ((itemHeight && itemHeight > 0) || presetHeight) {
       measuredItems.push(item)
+      // 如果还没有测量过但有预设高度，设置预设高度
+      if (!itemHeight && presetHeight) {
+        state.itemHeights.set(item.id, presetHeight)
+      }
     } else {
       unmeasuredItems.push(item)
     }
@@ -147,7 +157,7 @@ function calculateLayout() {
     const shortestColumn = heights.indexOf(Math.min(...heights))
 
     // 为未测量元素设置默认高度，用于初始布局
-    const defaultHeight = 200
+    const defaultHeight = 300 // 图片默认高度调整为300px
     const position = {
       top: heights[shortestColumn],
       left: shortestColumn * (actualColumnWidth.value + props.gutter),
@@ -211,6 +221,8 @@ const visibleItems = computed(() => {
 function getItemStyle(item: MasonryItem, index: number) {
   const position = state.positions.get(item.id)
   const isItemMeasured = state.itemHeights.has(item.id) && (state.itemHeights.get(item.id) || 0) > 0
+  const isFullyMeasured = state.fullyMeasuredItems.has(item.id)
+  const imageLoadState = state.imageLoadStates.get(item.id)
 
   if (!position) {
     return {
@@ -229,6 +241,17 @@ function getItemStyle(item: MasonryItem, index: number) {
     left: `${position.left}px`,
     width: `${position.width}px`,
     transform: 'translateZ(0)', // 开启硬件加速
+  }
+
+  // 如果元素有预设高度或者已经完全测量过，立即显示
+  const hasPresetHeight = (item as any).height && (item as any).height > 0
+  if (hasPresetHeight || isFullyMeasured) {
+    return {
+      ...baseStyle,
+      visibility: 'visible' as const,
+      opacity: 1,
+      transition: 'transform 0.3s ease, opacity 0.3s ease'
+    }
   }
 
   // 如果元素还未测量，设为隐藏但参与布局
@@ -270,13 +293,15 @@ function setItemRef(el: any, item: MasonryItem, index: number) {
     el.setAttribute('data-grid-item-idx', index.toString())
     el.setAttribute('data-grid-item-id', item.id.toString())
 
-    // 如果启用了 ResizeObserver，则使用它来监听
-    if (props.dynamicHeights && resizeObserver) {
+    // 如果启用了 ResizeObserver，则使用它来监听（但只针对未完全测量的项目）
+    if (props.dynamicHeights && resizeObserver && !state.fullyMeasuredItems.has(item.id)) {
       resizeObserver.observe(el)
     }
 
-    // 立即测量高度
-    measureItem(el, item)
+    // 只有在未完全测量的情况下才测量高度
+    if (!state.fullyMeasuredItems.has(item.id)) {
+      measureItem(el, item)
+    }
   } else {
     // 元素被移除时，从 ResizeObserver 中取消监听
     const existingEl = itemRefs.get(item.id)
@@ -289,11 +314,36 @@ function setItemRef(el: any, item: MasonryItem, index: number) {
 
 // 测量单个项目
 function measureItem(el: HTMLElement, item: MasonryItem) {
+  const currentHeight = state.itemHeights.get(item.id)
+
+  // 如果已经有缓存的高度且高度合理（> 0)，不需要重新测量
+  if (currentHeight && currentHeight > 0) {
+    return
+  }
+
+  // 如果item有预设高度，直接使用
+  const presetHeight = (item as any).height
+  if (presetHeight && presetHeight > 0) {
+    state.itemHeights.set(item.id, presetHeight)
+
+    // 标记有待处理的测量
+    state.hasPendingMeasurements = true
+
+    // 根据配置决定是否使用 RAF
+    if (props.useRAF) {
+      scheduleLayoutUpdate()
+    } else {
+      calculateLayout()
+    }
+    return
+  }
+
   nextTick(() => {
     const height = el.offsetHeight
-    const currentHeight = state.itemHeights.get(item.id)
+    const cachedHeight = state.itemHeights.get(item.id)
 
-    if (height > 0 && height !== currentHeight) {
+    // 只有当高度有效且与缓存不同时才更新
+    if (height > 0 && height !== cachedHeight) {
       state.itemHeights.set(item.id, height)
 
       // 标记有待处理的测量
@@ -407,6 +457,8 @@ watch(() => props.items, (newItems, oldItems) => {
     if (!newItemIds.has(item.id)) {
       state.itemHeights.delete(item.id)
       state.positions.delete(item.id)
+      state.imageLoadStates.delete(item.id)
+      state.fullyMeasuredItems.delete(item.id)
 
       // 从 ResizeObserver 中移除
       const el = itemRefs.get(item.id)
@@ -514,6 +566,8 @@ function forceRemeasure() {
   // 清理所有缓存
   state.itemHeights.clear()
   state.positions.clear()
+  state.imageLoadStates.clear()
+  state.fullyMeasuredItems.clear()
   state.hasPendingMeasurements = true
 
   // 如果有 ResizeObserver，重新监听所有元素
@@ -542,6 +596,45 @@ function forceRemeasure() {
   })
 }
 
+// 图片加载处理函数
+function handleImageLoad(itemId: string | number) {
+  state.imageLoadStates.set(itemId, 'loaded')
+
+  // 延迟一帧后标记为完全测量，确保图片完全渲染
+  nextTick(() => {
+    const el = itemRefs.get(itemId)
+    const item = props.items.find(item => item.id === itemId)
+
+    if (el && item) {
+      // 重新测量一次最终高度
+      const finalHeight = el.offsetHeight
+      if (finalHeight > 0) {
+        const currentHeight = state.itemHeights.get(itemId)
+        if (Math.abs(finalHeight - (currentHeight || 0)) > 1) {
+          state.itemHeights.set(itemId, finalHeight)
+
+          // 标记需要重新布局
+          state.hasPendingMeasurements = true
+          if (props.useRAF) {
+            scheduleLayoutUpdate()
+          } else {
+            calculateLayout()
+          }
+        }
+
+        // 标记为完全测量
+        state.fullyMeasuredItems.add(itemId)
+      }
+    }
+  })
+}
+
+function handleImageError(itemId: string | number) {
+  state.imageLoadStates.set(itemId, 'error')
+  // 即使图片加载失败，也标记为完全测量，避免重复处理
+  state.fullyMeasuredItems.add(itemId)
+}
+
 // 暴露方法和调试信息
 defineExpose({
   reflow: forceRemeasure,
@@ -554,6 +647,9 @@ defineExpose({
       measureItem(el, item)
     }
   },
+  // 图片处理方法
+  handleImageLoad,
+  handleImageError,
   // 调试信息
   columnCount,
   actualColumnWidth,
@@ -578,6 +674,14 @@ defineExpose({
       return count
     }).value
     return total - measured
+  }),
+  fullyMeasuredItemsCount: computed(() => state.fullyMeasuredItems.size),
+  imageLoadStatesCount: computed(() => {
+    const states = { loading: 0, loaded: 0, error: 0 }
+    state.imageLoadStates.forEach(state => {
+      states[state]++
+    })
+    return states
   })
 })
 </script>
