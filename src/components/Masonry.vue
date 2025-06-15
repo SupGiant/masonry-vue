@@ -1,23 +1,6 @@
 <template>
-  <div v-if="scrollContainer">
-    <!-- 如果存在滚动容器 返回一个包装后的组建 -->
-  </div>
-
-  <div v-else>
-    <!-- 不存在滚动容器 返回一个未包装的组件 -->
-
-    <!-- 三种渲染情况 -->
-    <div v-if="width == null && hasPendingMeasurements">
-      <!-- 1. 宽度未知并且有带测量项目 - 渲染测量模式 -->
-    </div>
-
-    <div v-else-if="width == null">
-      <!-- 2. 宽度未知并且没有带测量项目 - 渲染占位符 -->
-    </div>
-
-    <div v-else-if="width != null">
-      <!-- 3. 宽度已知 - 渲染网格 -->
-    </div>
+  <div>
+    <component :is="render" />
   </div>
 </template>
 
@@ -110,8 +93,30 @@ const fetchMore = () => {
   }
 }
 
-// 渲染函数
+// 自定义的渲染函数
 const renderMasonryComponent = () => {}
+
+// 默认的渲染函数
+const render = () => {
+  let renderComponent = null
+
+  if (width.value == null && hasPendingMeasurements.value) {
+    renderComponent = renderMasonryComponent
+  } else if (width.value == null) {
+    renderComponent = renderPlaceholder
+  } else {
+    renderComponent = renderGrid
+  }
+
+  return props.scrollContainer ? (
+    <div>
+      {renderComponent}
+    </div>
+  ) : renderComponent
+}
+
+
+
 
 // 生命周期钩子函数
 onMounted(() => {
