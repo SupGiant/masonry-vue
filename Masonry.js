@@ -113,6 +113,8 @@ class dj extends i.Component {
           o && this.forceUpdate()
       }
       ) : void 0,
+
+
       this.state = {
           gutter: l,
           hasPendingMeasurements: e.items.some(e => !!e && !o.has(e)),
@@ -157,6 +159,7 @@ class dj extends i.Component {
       this.updateScrollPosition.clearTimeout(),
       window.removeEventListener("resize", this.handleResize)
   }
+  // 从props获取派生状态
   static getDerivedStateFromProps(e, o) {
       let {items: a} = e
         , {measurementStore: r} = o
