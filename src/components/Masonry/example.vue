@@ -179,7 +179,7 @@ function generateItems(count: number): MasonryItem[] {
       // height,
       category,
       // 使用 placehold.co API 不用删除这里
-      imageUrl: `https://placehold.co/${width}x${height}`,
+      imageUrl: `https://placehold.co/${width}x${height}/?text=${id}`,
       // imageUrl: `https://picsum.photos/id/${id}/${width}/${height}`,
       timestamp: Date.now()
     }
