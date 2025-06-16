@@ -49,10 +49,11 @@
 
           <!-- 调试信息 -->
           <div class="debug-info">
-            <span>当前列数: {{ masonryRef?.columnCount || 0 }}</span>
-            <span>实际列宽: {{ masonryRef?.actualColumnWidth?.toFixed(0) || 0 }}px</span>
-            <span>容器宽度: {{ masonryRef?.containerWidth || 0 }}px</span>
-            <span>可见元素: {{ masonryRef?.visibleItemsCount || 0 }}/{{ items.length }}</span>
+            <span>总元素: {{ items.length }}</span>
+            <span>列宽: {{ columnWidth }}px</span>
+            <span>间距: {{ gutter }}px</span>
+            <span>最小列数: {{ minCols }}</span>
+            <span>虚拟滚动: {{ virtualize ? '开启' : '关闭' }}</span>
           </div>
         </div>
       </div>
@@ -60,37 +61,18 @@
 
     <!-- 瀑布流内容区 -->
     <main class="main-content">
-      <VirtualMasonry
+      <Masonry
         ref="masonryRef"
         :items="items"
         :column-width="columnWidth"
-        :gutter="gutter"
+        :gutter-width="gutter"
         :min-cols="minCols"
         :max-cols="maxCols"
         :virtualize="virtualize"
-        @load-more="loadMore"
+        :load-items="enableInfiniteScroll ? loadMore : undefined"
+        :render-item="renderItem"
         class="masonry-wrapper"
-      >
-        <template #item="{ item, index }">
-          <div class="image-card">
-            <img
-              :src="item.imageUrl"
-              :alt="item.title"
-              :style="{ height: item.height + 'px' }"
-              @load="onImageLoad"
-              @error="onImageError"
-            />
-            <div class="card-overlay">
-              <h3>{{ item.title }}</h3>
-              <p>{{ item.description }}</p>
-              <div class="card-meta">
-                <span>尺寸: {{ item.width }}×{{ item.height }}</span>
-                <span>ID: {{ item.id }}</span>
-              </div>
-            </div>
-          </div>
-        </template>
-      </VirtualMasonry>
+      />
 
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-indicator">
@@ -112,9 +94,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import VirtualMasonry from './VirtualMasonry.vue'
-import type { MasonryItem } from './VirtualMasonry.vue'
+import { ref, onMounted, h, nextTick } from 'vue'
+import Masonry from '../index'
 
 // 组件引用
 const masonryRef = ref()
@@ -126,6 +107,16 @@ const minCols = ref(3)
 const maxCols = ref(8)
 const virtualize = ref(true)
 const enableInfiniteScroll = ref(true)
+
+// 数据类型定义
+interface MasonryItem {
+  id: number
+  title: string
+  description: string
+  category: string
+  imageUrl: string
+  timestamp: number
+}
 
 // 数据状态
 const items = ref<MasonryItem[]>([])
@@ -175,12 +166,9 @@ function generateItems(count: number): MasonryItem[] {
       id,
       title: `精美图片 #${id}`,
       description: `这是一张${width}×${height}的${category}类型图片`,
-      // width,
-      // height,
       category,
-      // 使用 placehold.co API 不用删除这里
-      imageUrl: `https://placehold.co/${width}x${height}/?text=${id}`,
-      // imageUrl: `https://picsum.photos/id/${id}/${width}/${height}`,
+      // 使用 placehold.co API 生成占位图片
+      imageUrl: `https://placehold.co/${width}x${height}/${color}/FFFFFF?text=${id}`,
       timestamp: Date.now()
     }
   })
@@ -201,7 +189,17 @@ function clearItems() {
 // 重新布局
 function reflow() {
   if (masonryRef.value) {
-    masonryRef.value.reflow()
+    // 新的 Masonry 组件有 reflow 方法的话调用，否则强制重新渲染
+    if (typeof masonryRef.value.reflow === 'function') {
+      masonryRef.value.reflow()
+    } else {
+      // 强制重新渲染
+      const currentItems = items.value
+      items.value = []
+      nextTick(() => {
+        items.value = currentItems
+      })
+    }
   }
 }
 
@@ -220,16 +218,42 @@ async function loadMore() {
   loading.value = false
 }
 
+// 渲染每个瀑布流项目的函数
+function renderItem({ data: item, itemIdx: index, isMeasuring }: { data: MasonryItem, itemIdx: number, isMeasuring: boolean }) {
+  return h('div', {
+    class: 'image-card',
+    key: `item-${item.id}`
+  }, [
+    h('img', {
+      src: item.imageUrl,
+      alt: item.title,
+      onLoad: onImageLoad,
+      onError: onImageError,
+      style: {
+        width: '100%',
+        height: 'auto',
+        display: 'block'
+      }
+    }),
+    h('div', {
+      class: 'card-overlay'
+    }, [
+      h('h3', {}, item.title),
+      h('p', {}, item.description),
+      h('div', {
+        class: 'card-meta'
+      }, [
+        h('span', {}, `类别: ${item.category}`),
+        h('span', {}, `ID: ${item.id}`)
+      ])
+    ])
+  ])
+}
+
 // 图片加载完成
 function onImageLoad(event: Event) {
-  // 图片加载完成后，可能需要重新计算布局
-  if (masonryRef.value) {
-    // 小延迟确保图片完全渲染
-    // 这里导致全局重拍，性能非常的差
-    // setTimeout(() => {
-    //   masonryRef.value.reflow()
-    // }, 100)
-  }
+  // 新的 Masonry 组件使用 ResizeObserver 自动处理图片尺寸变化
+  // 无需手动调用 reflow，组件会自动重新计算布局
 }
 
 // 图片加载错误
