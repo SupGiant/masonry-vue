@@ -170,11 +170,11 @@ function getItemStyle(item: MasonryItem, index: number) {
   const position = state.positions.get(item.id)
   if (!position) {
     return {
-      position: 'absolute' as const,
+      position: 'absolute',
       top: '0px',
       left: '0px',
       width: `${actualColumnWidth.value}px`,
-      visibility: 'hidden' as const
+      visibility: 'hidden'
     }
   }
 

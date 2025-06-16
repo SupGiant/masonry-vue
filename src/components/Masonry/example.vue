@@ -60,7 +60,7 @@
 
     <!-- 瀑布流内容区 -->
     <main class="main-content">
-      <SimpleMasonry
+      <VirtualMasonry
         ref="masonryRef"
         :items="items"
         :column-width="columnWidth"
@@ -90,7 +90,7 @@
             </div>
           </div>
         </template>
-      </SimpleMasonry>
+      </VirtualMasonry>
 
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-indicator">
@@ -113,8 +113,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import SimpleMasonry from './simple.vue'
-import type { MasonryItem } from './simple.vue'
+import VirtualMasonry from './VirtualMasonry.vue'
+import type { MasonryItem } from './VirtualMasonry.vue'
 
 // 组件引用
 const masonryRef = ref()
@@ -175,11 +175,12 @@ function generateItems(count: number): MasonryItem[] {
       id,
       title: `精美图片 #${id}`,
       description: `这是一张${width}×${height}的${category}类型图片`,
-      width,
-      height,
+      // width,
+      // height,
       category,
-      // 使用 placehold.co API
+      // 使用 placehold.co API 不用删除这里
       imageUrl: `https://placehold.co/${width}x${height}`,
+      // imageUrl: `https://picsum.photos/id/${id}/${width}/${height}`,
       timestamp: Date.now()
     }
   })
