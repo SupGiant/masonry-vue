@@ -43,7 +43,8 @@ class dj extends i.Component {
       }
       ,
       this.renderMasonryComponent = (e, o, a) => {
-          let r, {renderItem: t, scrollContainer: l, virtualize: c, virtualBoundsTop: i, virtualBoundsBottom: d, virtualBufferFactor: s} = this.props, {top: u, left: b, width: g, height: m} = a;
+          let r, {renderItem: t, scrollContainer: l, virtualize: c, virtualBoundsTop: i, virtualBoundsBottom: d, virtualBufferFactor: s} = this.props,
+          {top: u, left: b, width: g, height: m} = a;
           if (l && s) {
               let e = this.containerHeight * s
                 , o = this.state.scrollTop - this.containerOffset
@@ -63,7 +64,8 @@ class dj extends i.Component {
                   right: 0
               } : {
                   left: 0
-              }), {
+              }),
+              {
                   transform: `translateX(${f ? -1 * b : b}px) translateY(${u}px)`,
                   WebkitTransform: `translateX(${f ? -1 * b : b}px) translateY(${u}px)`,
                   width: dC(g),
@@ -136,14 +138,15 @@ class dj extends i.Component {
           width: this.gridWrapper ? this.gridWrapper.getBoundingClientRect().width : o.width
       }))
   }
-  componentDidUpdate(e, o) {
+  componentDidUpdate(prevProps, prevState) {
       let {items: a} = this.props
         , {measurementStore: r} = this.state;
       this.measureContainerAsync(),
-      null != o.width && this.state.width !== o.width && (r.reset(),
+      null != prevState.width && this.state.width !== prevState.width && (
+        r.reset(),
       this.positionStore.reset());
       let t = a.some(e => !!e && !r.has(e));
-      (t || t !== this.state.hasPendingMeasurements || null == o.width) && (this.insertAnimationFrame = requestAnimationFrame( () => {
+      (t || t !== this.state.hasPendingMeasurements || null == prevState.width) && (this.insertAnimationFrame = requestAnimationFrame( () => {
           this.setState({
               hasPendingMeasurements: t
           })
@@ -565,6 +568,7 @@ function dM(e) {
   return e === window || e instanceof Window ? dw() : e.scrollTop - e.getBoundingClientRect().top
 }
 
+//calculateColumnCount
 function i6({gutter: e, columnWidth: o, width: a, minCols: r}) {
   return Math.max(Math.floor(a / ((null != o ? o : 236) + (null != e ? e : 14))), r)
 }
@@ -750,7 +754,9 @@ let ds = e => {
 let dm = ({cache: e, columnWidth: o=236, flexible: a=!1, gutter: r, width: t, minCols: n=3}) => l => {
   if (null == t)
       return l.map( () => dg(o));
-  let {columnWidth: c, columnWidthAndGutter: i, columnCount: d} = function({columnWidth: e, flexible: o, gutter: a, minCols: r, width: t}) {
+  let {columnWidth: c, columnWidthAndGutter: i, columnCount: d} =
+
+  function({columnWidth: e, flexible: o, gutter: a, minCols: r, width: t}) {
       if (o) {
           let o = i6({
               gutter: a,
@@ -804,7 +810,8 @@ let dm = ({cache: e, columnWidth: o=236, flexible: a=!1, gutter: r, width: t, mi
 
 let db = e => {
   var {width: o, idealColumnWidth: a=240, gutter: r, minCols: t=2, measurementCache: n, _getColumnSpanConfig: l, _getModulePositioningConfig: c, _getResponsiveModuleConfigForSecondItem: i, _enableSectioningPosition: d} = e
-    , s = b(e, ["width", "idealColumnWidth", "gutter", "minCols", "measurementCache", "_getColumnSpanConfig", "_getModulePositioningConfig", "_getResponsiveModuleConfigForSecondItem", "_enableSectioningPosition"]);
+    ,
+    s = b(e, ["width", "idealColumnWidth", "gutter", "minCols", "measurementCache", "_getColumnSpanConfig", "_getModulePositioningConfig", "_getResponsiveModuleConfigForSecondItem", "_enableSectioningPosition"]);
   if (null == o)
       return e => e.map( () => ({
           top: 1 / 0,
@@ -864,6 +871,7 @@ let db = e => {
 }
 
 
+//omit
 function b(e, o) {
   var a = {};
   for (var r in e)
@@ -886,6 +894,7 @@ function i7(e, o=1 / 0) {
 let dd = ({align: e, columnCount: o, columnWidthAndGutter: a, gutter: r, layout: t, rawItemCount: n, width: l}) => "basicCentered" === t ? Math.max(Math.floor((l - (Math.min(n, o) * a + r)) / 2), 0) : "center" === e ? Math.max(Math.floor((l - a * o + r) / 2), 0) : "end" === e ? l - (a * o - r) : 0
 
 
+//handleMultiColumnLayout
 let dc = ({items: e, gutter: o=14, columnWidth: a=236, columnCount: r=2, centerOffset: t=0, logWhitespace: n, measurementCache: l, positionCache: c, originalItems: i, _getColumnSpanConfig: d, _getModulePositioningConfig: s, _getResponsiveModuleConfigForSecondItem: u, _enableSectioningPosition: g}) => {
   let m = i[0]
     , f = i[1]
@@ -1217,6 +1226,8 @@ let dc = ({items: e, gutter: o=14, columnWidth: a=236, columnCount: r=2, centerO
   da(S)
 }
 
+
+//findShortestColumnIndex
 function i8(e) {
   return e.length ? e.indexOf(Math.min(...e)) : 0
 }
@@ -1273,4 +1284,60 @@ function dl({centerOffset: e, columnWidth: o, columnWidthAndGutter: a, gutter: r
 
 function da(e) {
   return e.map( ({position: e}) => e)
+}
+
+
+class de {
+  constructor() {
+      this.nodes = new Map
+  }
+  addEdge(e, o, a) {
+      let r = this.addNode(e)
+        , t = this.addNode(o);
+      return r.addEdge(t, a),
+      [r, t]
+  }
+  addNode(e) {
+      if (this.nodes.has(e)) {
+          let o = this.nodes.get(e);
+          if (o)
+              return o
+      }
+      let o = new i9(e);
+      return this.nodes.set(e, o),
+      o
+  }
+  removeNode(e) {
+      let o = this.nodes.get(e);
+      return o && o.edges.forEach( ({node: e}) => {
+          e.removeEdge(o)
+      }
+      ),
+      this.nodes.delete(e)
+  }
+  removeEdge(e, o) {
+      let a = this.nodes.get(e)
+        , r = this.nodes.get(o);
+      return a && r && a.removeEdge(r),
+      [a, r]
+  }
+  findLowestScore(e) {
+      let o = null
+        , a = e
+        , r = e => {
+          e.getEdges().forEach(e => {
+              let {score: t, node: n} = e;
+              (null === o || t < o) && (o = t,
+              a = n.data),
+              r(n)
+          }
+          )
+      }
+        , t = this.nodes.get(e);
+      return t && r(t),
+      {
+          lowestScore: o,
+          lowestScoreNode: a
+      }
+  }
 }
