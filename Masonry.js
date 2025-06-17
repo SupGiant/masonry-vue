@@ -281,7 +281,11 @@ class dj extends i.Component {
               }
           });
       else {
-          let o, t, i = r.filter(e => e && p.has(e)), d = r.filter(e => !p.has(e)), g = s && d.find(e => 1 !== s(e));
+          let o, t, i = r.filter(e => e && p.has(e)),
+
+          d = r.filter(e => !p.has(e)),
+
+          g = s && d.find(e => 1 !== s(e));
           if (g) {
               o = d.indexOf(g);
               let e = i6({
@@ -327,11 +331,12 @@ class dj extends i.Component {
                       height: M,
                       width: h
                   },
-                  children: [i.map( (e, o) => {
+                  children: [
+                    i.map( (e, o) => {
                       var a;
                       return this.renderMasonryComponent(e, o, null != (a = x.get(e)) ? a : y[o])
-                  }
-                  ), k.map( (e, o) => {
+                  }),
+                  k.map( (e, o) => {
                       let a = i.length + o
                         , r = w[o];
                       return (0,
@@ -357,7 +362,8 @@ class dj extends i.Component {
                       }, `measuring-${a}`)
                   }
                   )]
-              }), this.scrollContainer && (0,
+              }),
+              this.scrollContainer && (0,
               n.jsx)(i2, {
                   containerHeight: this.containerHeight,
                   fetchMore: this.fetchMore,
@@ -573,6 +579,7 @@ function i6({gutter: e, columnWidth: o, width: a, minCols: r}) {
   return Math.max(Math.floor(a / ((null != o ? o : 236) + (null != e ? e : 14))), r)
 }
 
+//calculateColumnSpan
 function dt(e) {
   let {columnCount: o, item: a, firstItem: r, isFlexibleWidthItem: t, _getColumnSpanConfig: n, responsiveModuleConfigForSecondItem: l} = e
     , c = n(a)
@@ -583,6 +590,11 @@ function dt(e) {
       d = "number" == typeof l ? l : l ? Math.max(l.min, Math.min(l.max, o - e)) : 1
   }
   return Math.min(d, o)
+}
+
+function dr(e, o) {
+  var a, r, t;
+  return "number" == typeof e ? e : "_lg1" === o ? null != (r = null != (a = e[o]) ? a : e.lg) ? r : 1 : null != (t = e[o]) ? t : 1
 }
 
 
@@ -613,6 +625,10 @@ class dk extends i.Component {
   render() {
       return i.Children.only(this.props.children)
   }
+}
+
+function dv(e) {
+  return "function" == typeof e ? e() : e
 }
 
 
@@ -984,6 +1000,7 @@ let dc = ({items: e, gutter: o=14, columnWidth: a=236, columnCount: r=2, centerO
       }, M))
         , {positions: t} = e.reduce( (e, o, a) => (function(e) {
           var {multiColumnItem: o, checkIsFlexibleWidthItem: a, firstItem: r, itemsToPosition: t, heights: n, prevPositions: l, columnCount: c, logWhitespace: i, responsiveModuleConfigForSecondItem: d, _getColumnSpanConfig: s, _getModulePositioningConfig: u, _enableSectioningPosition: g} = e
+          // b 是omit
             , m = b(e, ["multiColumnItem", "checkIsFlexibleWidthItem", "firstItem", "itemsToPosition", "heights", "prevPositions", "columnCount", "logWhitespace", "responsiveModuleConfigForSecondItem", "_getColumnSpanConfig", "_getModulePositioningConfig", "_enableSectioningPosition"]);
           let {positionCache: f} = m
             , p = t.indexOf(o)

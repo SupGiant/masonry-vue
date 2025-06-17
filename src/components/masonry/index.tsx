@@ -4,6 +4,7 @@ import {
   onMounted,
   onUpdated,
   onUnmounted,
+  watchEffect,
   ref,
   type PropType,
   watch,
@@ -61,6 +62,98 @@ interface ResponsiveModuleConfig {
   min: number
   max: number
 }
+
+
+/**
+ * 解析滚动容器引用
+ * @param container 滚动容器，可以是元素、窗口或返回它们的函数
+ * @returns 实际的滚动容器元素
+ */
+function resolveScrollContainer(container?: HTMLElement | Window | (() => HTMLElement | Window | null)): HTMLElement | Window | null {
+  return typeof container === 'function' ? container() : container || null
+}
+
+export const ScrollContainerWrapper = defineComponent({
+  name: 'ScrollContainerWrapper',
+  props: {
+    scrollContainer: {
+      type: [Object, Function] as PropType<HTMLElement | Window | (() => HTMLElement | Window | null)>,
+      default: undefined
+    },
+    onScroll: {
+      type: Function as PropType<(event: Event) => void>,
+      required: true
+    }
+  },
+  setup(props, { slots, expose }) {
+    // 保存当前滚动容器的引用
+    const currentScrollContainer = ref<HTMLElement | Window | null>(null)
+
+    /**
+     * 获取滚动容器引用的方法，暴露给父组件
+     */
+    const getScrollContainerRef = () => currentScrollContainer.value
+
+    /**
+     * 处理滚动事件
+     */
+    const handleScroll = (event: Event) => {
+      props.onScroll(event)
+    }
+
+    /**
+     * 更新滚动容器，添加或移除事件监听器
+     */
+    const updateScrollContainer = (container: HTMLElement | Window | null) => {
+      // 移除旧容器的事件监听器
+      if (currentScrollContainer.value) {
+        currentScrollContainer.value.removeEventListener('scroll', handleScroll)
+      }
+
+      // 更新引用
+      currentScrollContainer.value = container
+
+      // 为新容器添加事件监听器
+      if (currentScrollContainer.value) {
+        currentScrollContainer.value.addEventListener('scroll', handleScroll)
+      }
+    }
+
+    // 组件挂载时设置滚动容器
+    onMounted(() => {
+      const container = resolveScrollContainer(props.scrollContainer)
+      if (container) {
+        updateScrollContainer(container)
+      }
+    })
+
+    // 组件更新时检查滚动容器是否变化
+    onUpdated(() => {
+      const container = resolveScrollContainer(props.scrollContainer)
+      if (container && container !== currentScrollContainer.value) {
+        updateScrollContainer(container)
+      }
+    })
+
+    // 组件卸载时清理事件监听器
+    onUnmounted(() => {
+      if (currentScrollContainer.value) {
+        currentScrollContainer.value.removeEventListener('scroll', handleScroll)
+      }
+    })
+
+    // 暴露方法给父组件
+    expose({
+      getScrollContainerRef
+    })
+
+    return () => {
+      // 渲染单个子组件，类似于 React.Children.only
+      const children = slots.default?.()
+      return children && children.length === 1 ? children[0] : null
+    }
+  }
+})
 
 // 主要的Props类型定义
 interface MasonryProps<T = any> {
@@ -151,6 +244,65 @@ function throttle(e: Function, o: number = 100) {
 
   return throttledFn
 }
+
+const InfiniteScroll = defineComponent({
+  name: 'InfiniteScroll',
+  props: {
+    containerHeight: {
+      type: Number,
+      required: true,
+    },
+    fetchMore: {
+      type: Function as PropType<() => void>,
+      default: undefined,
+    },
+    isAtEnd: {
+      type: Boolean,
+      default: false,
+    },
+    isFetching: {
+      type: Boolean,
+      required: true,
+    },
+    scrollHeight: {
+      type: Number,
+      required: true,
+    },
+    scrollTop: {
+      type: Number,
+      required: true,
+    },
+  },
+  setup(props) {
+    // 检查是否需要加载更多数据的函数
+    const checkLoadMore = () => {
+      const { containerHeight, fetchMore, isAtEnd, isFetching, scrollHeight, scrollTop } = props
+
+      // 条件检查：
+      // 1. 没有到达数据末尾 (!isAtEnd)
+      // 2. 当前没在加载数据 (!isFetching)
+      // 3. 有加载更多的回调函数 (fetchMore)
+      // 4. 滚动位置接近底部 (scrollTop + 3 * containerHeight > scrollHeight)
+      if (!isAtEnd && !isFetching && fetchMore && scrollTop + 3 * containerHeight > scrollHeight) {
+        fetchMore()
+      }
+    }
+
+    // 使用 watchEffect 监听 props 变化，类似于 React 的 useEffect
+    watchEffect((onCleanup) => {
+      // 使用 setTimeout 避免频繁触发，提供防抖效果
+      const timeoutId = setTimeout(checkLoadMore, 0)
+
+      // 清理函数，在组件卸载或依赖变化时清除定时器
+      onCleanup(() => {
+        clearTimeout(timeoutId)
+      })
+    })
+
+    // 不渲染任何内容，只负责逻辑处理
+    return () => null
+  },
+})
 
 // 验证数字，主要是过滤无限大
 let safePx = (e: number) => {
@@ -570,7 +722,7 @@ function createFlexibleLayout(config: any) {
 
     if (_getColumnSpanConfig) {
       // 占位符
-      return dc(
+      return handleMultiColumnLayout(
         Object.assign(
           {
             items,
@@ -625,7 +777,7 @@ function omit<T extends Record<string | symbol, any>, K extends keyof T>(
 
   // 遍历对象的可枚举属性
   for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key) && keysToOmit.indexOf(key as K) === -1) {
+    if (Object.prototype.hasOwnProperty.call(obj, key) && keysToOmit.indexOf(key as unknown as K) === -1) {
       ;(result as any)[key] = obj[key]
     }
   }
@@ -751,11 +903,799 @@ function createFixedColumnLayout(config: any) {
  * 处理多列跨度的复杂布局
  * 这是一个占位函数，实际实现会更复杂
  */
-function handleMultiColumnLayout(config: any): Position[] {
-  // 这里应该调用 dc 函数的实现
-  // 由于 dc 函数非常复杂，这里只是一个占位符
-  console.warn('Multi-column layout not fully implemented in this simplified version')
-  return config.items.map(() => createDefaultPosition(config.columnWidth))
+function handleMultiColumnLayout(params: any): Position[] {
+  const {
+    items,
+    gutter = 14,
+    columnWidth = 236,
+    columnCount = 2,
+    centerOffset = 0,
+    logWhitespace,
+    measurementCache,
+    positionCache,
+    originalItems,
+    _getColumnSpanConfig,
+    _getModulePositioningConfig,
+    _getResponsiveModuleConfigForSecondItem,
+    _enableSectioningPosition = false
+  } = params;
+
+  const firstItem = originalItems[0];
+  const secondItem = originalItems[1];
+  const responsiveConfig = _getResponsiveModuleConfigForSecondItem(secondItem);
+  const checkIsFlexibleWidthItem = (item: any): boolean => !!responsiveConfig && item === secondItem;
+
+  // 如果不是所有项目都已测量，返回默认位置
+  if (!items.every((item: any) => measurementCache.has(item))) {
+    return items.map((item: any) => {
+      const columnSpan = calculateColumnSpan({
+        columnCount,
+        firstItem,
+        isFlexibleWidthItem: checkIsFlexibleWidthItem(item),
+        item,
+        responsiveModuleConfigForSecondItem: responsiveConfig,
+        _getColumnSpanConfig
+      });
+
+      if (columnSpan > 1) {
+        const spanWidth = Math.min(columnSpan, columnCount);
+        return createDefaultPosition(columnWidth * spanWidth + gutter * (spanWidth - 1));
+      }
+      return createDefaultPosition(columnWidth);
+    });
+  }
+
+  const columnWidthAndGutter = columnWidth + gutter;
+
+  // 计算初始高度
+  const initialHeights = calculateInitialHeights({
+    centerOffset,
+    checkIsFlexibleWidthItem,
+    columnCount,
+    columnWidthAndGutter,
+    firstItem,
+    gutter,
+    items,
+    positionCache,
+    responsiveModuleConfigForSecondItem: responsiveConfig,
+    _getColumnSpanConfig
+  });
+
+  // 分离已缓存和未缓存的项目
+  const cachedItems = items.filter((item: any) => positionCache.has(item));
+  const uncachedItems = items.filter((item: any) => !positionCache.has(item));
+  const multiColumnItems = uncachedItems.filter((item: any) =>
+    calculateColumnSpan({
+      columnCount,
+      firstItem,
+      isFlexibleWidthItem: checkIsFlexibleWidthItem(item),
+      item,
+      responsiveModuleConfigForSecondItem: responsiveConfig,
+      _getColumnSpanConfig
+    }) > 1
+  );
+
+  const layoutConfig = {
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache,
+    positionCache
+  };
+
+  // 如果有多列项目，使用复杂布局算法
+  if (multiColumnItems.length > 0) {
+    // 分组处理多列项目
+    const itemGroups = Array.from({ length: multiColumnItems.length }, () => [] as any[])
+      .map((_, index) => {
+        const startIndex = index === 0 ? 0 : uncachedItems.indexOf(multiColumnItems[index]);
+        const endIndex = index + 1 === multiColumnItems.length ?
+          uncachedItems.length :
+          uncachedItems.indexOf(multiColumnItems[index + 1]);
+        return uncachedItems.slice(startIndex, endIndex);
+      });
+
+    const { positions: cachedPositions, heights: updatedHeights } = positionSingleColumnItems({
+      ...layoutConfig,
+      items: cachedItems,
+      heights: initialHeights
+    });
+
+    // 处理每组项目
+    const { positions: finalPositions } = itemGroups.reduce((acc, groupItems, groupIndex) => {
+      return processMultiColumnItemGroup({
+        multiColumnItem: multiColumnItems[groupIndex],
+        itemsToPosition: groupItems,
+        checkIsFlexibleWidthItem,
+        firstItem,
+        heights: acc.heights,
+        prevPositions: acc.positions,
+        logWhitespace,
+        columnCount,
+        responsiveModuleConfigForSecondItem: responsiveConfig,
+        _getColumnSpanConfig,
+        _getModulePositioningConfig,
+        _enableSectioningPosition,
+        ...layoutConfig
+      });
+    }, { heights: updatedHeights, positions: cachedPositions });
+
+    return extractPositions(finalPositions);
+  }
+
+  // 简单布局：所有项目都是单列
+  const { positions } = positionSingleColumnItems({
+    ...layoutConfig,
+    items,
+    heights: initialHeights
+  });
+
+  // 更新位置缓存
+  positions.forEach(({ item, position }) => {
+    positionCache.set(item, position);
+  });
+
+  return extractPositions(positions);
+}
+
+// 提取位置数组
+function extractPositions(itemPositions: ItemPosition[]): Position[] {
+  return itemPositions.map(({ position }) => position);
+}
+
+// 辅助函数：定位单列项目
+function positionSingleColumnItems(params: {
+  centerOffset: number;
+  columnWidth: number;
+  columnWidthAndGutter: number;
+  gutter: number;
+  heights: number[];
+  items: any[];
+  measurementCache: measurementStore;
+  positionCache?: measurementStore;
+}) {
+  const { centerOffset, columnWidth, columnWidthAndGutter, gutter, measurementCache, positionCache } = params;
+  const heights = [...params.heights];
+
+  const positions = params.items.reduce<ItemPosition[]>((acc, item) => {
+    const cachedHeight = measurementCache.get(item);
+    const cachedPosition = positionCache?.get(item);
+
+    if (cachedPosition) {
+      return [...acc, { item, position: cachedPosition }];
+    }
+
+    if (cachedHeight != null) {
+      const shortestColumnIndex = findShortestColumnIndex(heights);
+      const top = heights[shortestColumnIndex];
+
+      heights[shortestColumnIndex] = heights[shortestColumnIndex] + (cachedHeight > 0 ? cachedHeight + gutter : 0);
+
+      return [...acc, {
+        item,
+        position: {
+          top,
+          left: shortestColumnIndex * columnWidthAndGutter + centerOffset,
+          width: columnWidth,
+          height: cachedHeight
+        }
+      }];
+    }
+
+    return acc;
+  }, []);
+
+  return { positions, heights };
+}
+
+// 辅助函数：计算多列项目位置
+function calculateMultiColumnItemPosition(params: {
+  centerOffset: number;
+  columnWidth: number;
+  columnWidthAndGutter: number;
+  gutter: number;
+  heights: number[];
+  item: any;
+  columnSpan: number;
+  measurementCache: measurementStore;
+  fitsFirstRow: boolean;
+}) {
+  const { centerOffset, columnWidth, columnWidthAndGutter, gutter, item, columnSpan, measurementCache, fitsFirstRow } = params;
+  const heights = [...params.heights];
+  const itemHeight = measurementCache.get(item);
+
+  if (itemHeight == null) {
+    return {
+      additionalWhitespace: null,
+      heights,
+      position: createDefaultPosition(columnWidth)
+    };
+  }
+
+  const whitespaceOptions = calculateShortestColumnsWhitespace(heights, columnSpan);
+  const bestColumnIndex = fitsFirstRow ?
+    heights.indexOf(0) :
+    whitespaceOptions.indexOf(Math.min(...whitespaceOptions));
+
+  const affectedColumns = heights.slice(bestColumnIndex, bestColumnIndex + columnSpan);
+  const tallestColumnIndex = bestColumnIndex + affectedColumns.indexOf(Math.max(...affectedColumns));
+  const top = heights[tallestColumnIndex];
+  const left = bestColumnIndex * columnWidthAndGutter + centerOffset;
+  const newHeight = heights[tallestColumnIndex] + (itemHeight > 0 ? itemHeight + gutter : 0);
+
+  // 计算额外的空白空间
+  const additionalWhitespace = affectedColumns.map(height => Math.max(...affectedColumns) - height);
+
+  // 更新高度
+  for (let i = 0; i < columnSpan; i++) {
+    heights[i + bestColumnIndex] = newHeight;
+  }
+
+  return {
+    additionalWhitespace,
+    heights,
+    position: {
+      top,
+      left,
+      width: columnWidth * columnSpan + gutter * (columnSpan - 1),
+      height: itemHeight
+    }
+  };
+}
+
+
+// 处理多列项目组的函数 - 完整实现
+function processMultiColumnItemGroup(params: {
+  multiColumnItem: any;
+  checkIsFlexibleWidthItem: (item: any) => boolean;
+  firstItem: any;
+  itemsToPosition: any[];
+  heights: number[];
+  prevPositions: ItemPosition[];
+  columnCount: number;
+  logWhitespace?: (whitespace: number[], iterations: number, columnSpan: number) => void;
+  responsiveModuleConfigForSecondItem: ResponsiveModuleConfig | number | undefined;
+  _getColumnSpanConfig: (item: any) => number | ColumnSpanConfig;
+  _getModulePositioningConfig?: (columnCount: number, columnSpan: number) => ModulePositioningConfig;
+  _enableSectioningPosition?: boolean;
+  centerOffset: number;
+  columnWidth: number;
+  columnWidthAndGutter: number;
+  gutter: number;
+  measurementCache: measurementStore;
+  positionCache: measurementStore;
+}) {
+  const {
+    multiColumnItem,
+    checkIsFlexibleWidthItem,
+    firstItem,
+    itemsToPosition,
+    heights,
+    prevPositions,
+    columnCount,
+    logWhitespace,
+    responsiveModuleConfigForSecondItem,
+    _getColumnSpanConfig,
+    _getModulePositioningConfig,
+    _enableSectioningPosition,
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache,
+    positionCache
+  } = params;
+
+  const multiColumnIndex = itemsToPosition.indexOf(multiColumnItem);
+  const singleColumnItems = itemsToPosition.filter(item =>
+    calculateColumnSpan({
+      columnCount,
+      firstItem,
+      isFlexibleWidthItem: checkIsFlexibleWidthItem(item),
+      item,
+      responsiveModuleConfigForSecondItem,
+      _getColumnSpanConfig
+    }) === 1
+  );
+
+  const emptyColumnsCount = heights.reduce((count, height) => height === 0 ? count + 1 : count, 0);
+  const multiColumnSpan = calculateColumnSpan({
+    columnCount,
+    firstItem,
+    isFlexibleWidthItem: checkIsFlexibleWidthItem(multiColumnItem),
+    item: multiColumnItem,
+    responsiveModuleConfigForSecondItem,
+    _getColumnSpanConfig
+  });
+
+  const fitsFirstRow = emptyColumnsCount >= multiColumnSpan + multiColumnIndex;
+  const replaceWithOneColItems = !fitsFirstRow && multiColumnIndex < emptyColumnsCount;
+
+  const { itemsBatchSize = 5, whitespaceThreshold, iterationsLimit } =
+    _getModulePositioningConfig?.(columnCount, multiColumnSpan) || {};
+
+  const batchIndex = calculateBatchIndex({
+    oneColumnItemsLength: singleColumnItems.length,
+    multiColumnIndex,
+    emptyColumns: emptyColumnsCount,
+    fitsFirstRow,
+    replaceWithOneColItems,
+    itemsBatchSize
+  });
+
+  const itemsBeforeMultiColumn = singleColumnItems.slice(0, batchIndex);
+  const batchItems = fitsFirstRow ? [] : singleColumnItems.slice(batchIndex, batchIndex + itemsBatchSize);
+
+  // 定位批次前的项目
+  const { positions: batchPositions, heights: batchHeights } = positionSingleColumnItems({
+    items: itemsBeforeMultiColumn,
+    heights,
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache,
+    positionCache
+  });
+
+  // 更新位置缓存
+  batchPositions.forEach(({ item, position }) => {
+    positionCache.set(item, position);
+  });
+
+  // 寻找批次项目的最优布局
+  const { winningNode, numberOfIterations } = findOptimalLayout({
+    items: batchItems,
+    positions: batchPositions,
+    heights: batchHeights,
+    columnSpan: multiColumnSpan,
+    iterationsLimit,
+    whitespaceThreshold,
+    _enableSectioningPosition,
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache,
+    positionCache
+  });
+
+    // 定位多列项目
+  const multiColumnHeights = winningNode.section !== undefined && _enableSectioningPosition ?
+    [...batchHeights.slice(0, winningNode.section), ...winningNode.heights, ...batchHeights.slice(winningNode.section + multiColumnSpan, batchHeights.length)] :
+    winningNode.heights;
+
+  const { heights: updatedHeights, position: multiColumnPosition, additionalWhitespace } = calculateMultiColumnItemPosition({
+    item: multiColumnItem,
+    heights: multiColumnHeights,
+    columnSpan: multiColumnSpan,
+    fitsFirstRow,
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache
+  });
+
+  const multiColumnItemPosition: ItemPosition = {
+    item: multiColumnItem,
+    position: multiColumnPosition
+  };
+
+  const allPositionedItems = winningNode.positions.concat(multiColumnItemPosition);
+  const positionedItemsSet = new Set(allPositionedItems.map(({ item }: { item: any }) => item));
+
+  // 定位剩余项目
+  const { heights: finalHeights, positions: remainingPositions } = positionSingleColumnItems({
+    items: itemsToPosition.filter(item => !positionedItemsSet.has(item)),
+    heights: updatedHeights,
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache,
+    positionCache
+  });
+
+  const allPositions = allPositionedItems.concat(remainingPositions);
+
+  // 记录空白空间信息
+  if (additionalWhitespace && logWhitespace) {
+    logWhitespace(additionalWhitespace, numberOfIterations, multiColumnSpan);
+  }
+
+  // 更新位置缓存
+  allPositions.forEach(({ item, position }: { item: any; position: Position }) => {
+    positionCache.set(item, position);
+  });
+
+  return {
+    positions: prevPositions.concat(allPositions),
+    heights: finalHeights
+  };
+}
+
+// 辅助函数：计算最短列的空白空间
+function calculateShortestColumnsWhitespace(heights: number[], columnSpan: number): number[] {
+  const whitespaceOptions: number[] = [];
+
+  for (let i = 0; i < heights.length - (columnSpan - 1); i++) {
+    const columns = heights.slice(i, i + columnSpan);
+    const maxHeight = Math.max(...columns);
+    const whitespace = columns.reduce((total, height) => total + maxHeight - height, 0);
+    whitespaceOptions.push(whitespace);
+  }
+
+  return whitespaceOptions;
+}
+
+
+// 图算法相关类
+class GraphNode {
+  data: any;
+  edges: Array<{ node: GraphNode; score: number }> = [];
+
+  constructor(data: any) {
+    this.data = data;
+  }
+
+  addEdge(node: GraphNode, score: number): void {
+    this.edges.push({ node, score });
+  }
+
+  removeEdge(node: GraphNode): void {
+    this.edges = this.edges.filter(edge => edge.node !== node);
+  }
+
+  getEdges(): Array<{ node: GraphNode; score: number }> {
+    return this.edges;
+  }
+}
+
+class Graph {
+  private nodes = new Map<any, GraphNode>();
+
+  addEdge(startData: any, endData: any, score: number): [GraphNode, GraphNode] {
+    const startNode = this.addNode(startData);
+    const endNode = this.addNode(endData);
+    startNode.addEdge(endNode, score);
+    return [startNode, endNode];
+  }
+
+  addNode(data: any): GraphNode {
+    if (this.nodes.has(data)) {
+      const node = this.nodes.get(data);
+      if (node) return node;
+    }
+
+    const node = new GraphNode(data);
+    this.nodes.set(data, node);
+    return node;
+  }
+
+  removeNode(data: any): boolean {
+    const node = this.nodes.get(data);
+    if (node) {
+      node.edges.forEach(({ node: connectedNode }) => {
+        connectedNode.removeEdge(node);
+      });
+    }
+    return this.nodes.delete(data);
+  }
+
+  removeEdge(startData: any, endData: any): [GraphNode | undefined, GraphNode | undefined] {
+    const startNode = this.nodes.get(startData);
+    const endNode = this.nodes.get(endData);
+
+    if (startNode && endNode) {
+      startNode.removeEdge(endNode);
+    }
+
+    return [startNode, endNode];
+  }
+
+  findLowestScore(startData: any): { lowestScore: number | null; lowestScoreNode: any } {
+    let lowestScore: number | null = null;
+    let lowestScoreNode = startData;
+
+    const traverse = (node: GraphNode): void => {
+      node.getEdges().forEach(({ score, node: connectedNode }) => {
+        if (lowestScore === null || score < lowestScore) {
+          lowestScore = score;
+          lowestScoreNode = connectedNode.data;
+        }
+        traverse(connectedNode);
+      });
+    };
+
+    const startNode = this.nodes.get(startData);
+    if (startNode) {
+      traverse(startNode);
+    }
+
+    return { lowestScore, lowestScoreNode };
+  }
+}
+
+
+interface OptimizationNode {
+  id: any;
+  heights: number[];
+  positions: ItemPosition[];
+  section?: number;
+}
+// 优化算法：寻找最佳布局
+function findOptimalLayout(params: {
+  items: any[];
+  positions: ItemPosition[];
+  heights: number[];
+  whitespaceThreshold?: number;
+  columnSpan: number;
+  iterationsLimit?: number;
+  _enableSectioningPosition?: boolean;
+  centerOffset: number;
+  columnWidth: number;
+  columnWidthAndGutter: number;
+  gutter: number;
+  measurementCache: measurementStore;
+  positionCache: measurementStore;
+}) {
+  const {
+    items,
+    positions,
+    heights,
+    whitespaceThreshold,
+    columnSpan,
+    iterationsLimit = 5000,
+    _enableSectioningPosition = false,
+    centerOffset,
+    columnWidth,
+    columnWidthAndGutter,
+    gutter,
+    measurementCache,
+    positionCache
+  } = params;
+
+  let bestScore: number | undefined;
+  let bestNode: OptimizationNode | undefined;
+  let iterationCount = 0;
+  const graph = new Graph();
+
+  const startNode: OptimizationNode = {
+    id: "start",
+    heights,
+    positions,
+    section: undefined
+  };
+
+  graph.addNode(startNode);
+  const minimumWhitespace = Math.min(...calculateShortestColumnsWhitespace(heights, columnSpan));
+
+  function processItemRecursively(params: {
+    item: any;
+    itemIndex: number;
+    remainingItems: any[];
+    previousNode: OptimizationNode;
+    currentHeights: number[];
+    processedItems?: any[];
+    section?: number;
+    segmentedLimit?: number;
+  }): void {
+    const {
+      item,
+      itemIndex,
+      remainingItems,
+      previousNode,
+      currentHeights,
+      processedItems = [],
+      section,
+      segmentedLimit = iterationsLimit
+    } = params;
+
+    if (bestNode || iterationCount === segmentedLimit) return;
+
+    const heightsCopy = [...currentHeights];
+    const sectionOffset = section ? columnWidthAndGutter * section + centerOffset : centerOffset;
+
+    const { positions: newPositions, heights: newHeights } = positionSingleColumnItems({
+      items: [...processedItems, item],
+      heights: heightsCopy,
+      centerOffset: sectionOffset,
+      columnWidth,
+      columnWidthAndGutter,
+      gutter,
+      measurementCache,
+      positionCache
+    });
+
+    const newNode: OptimizationNode = {
+      id: item,
+      heights: newHeights,
+      positions: newPositions,
+      section
+    };
+
+    const currentWhitespace = Math.min(...calculateShortestColumnsWhitespace(newHeights, columnSpan));
+    graph.addNode(newNode);
+    graph.addEdge(previousNode, newNode, currentWhitespace);
+    iterationCount++;
+
+    if (typeof whitespaceThreshold === 'number' && currentWhitespace < whitespaceThreshold) {
+      bestScore = currentWhitespace;
+      bestNode = newNode;
+      return;
+    }
+
+    if (remainingItems.length > 1) {
+      const nextItems = [...remainingItems];
+      nextItems.splice(itemIndex, 1);
+
+      nextItems.forEach((nextItem, nextIndex) => {
+        processItemRecursively({
+          item: nextItem,
+          itemIndex: nextIndex,
+          remainingItems: nextItems,
+          previousNode: newNode,
+          currentHeights: newHeights,
+          processedItems: [...processedItems, item],
+          section,
+          segmentedLimit
+        });
+      });
+    }
+  }
+
+  if (_enableSectioningPosition) {
+    const sectionCount = heights.length - columnSpan + 1;
+    const sectionsHeights = Array.from({ length: sectionCount }).map((_, index) =>
+      heights.slice(index, index + columnSpan)
+    );
+    const iterationsPerSection = Math.floor(iterationsLimit / sectionCount);
+
+    sectionsHeights.forEach((sectionHeights, sectionIndex) => {
+      iterationCount = 0;
+      items.forEach((item, itemIndex) => {
+        processItemRecursively({
+          item,
+          itemIndex,
+          remainingItems: items,
+          previousNode: startNode,
+          currentHeights: sectionHeights,
+          section: sectionIndex,
+          segmentedLimit: iterationsPerSection
+        });
+      });
+    });
+  } else {
+    items.forEach((item, itemIndex) => {
+      processItemRecursively({
+        item,
+        itemIndex,
+        remainingItems: items,
+        previousNode: startNode,
+        currentHeights: heights
+      });
+    });
+  }
+
+  const { lowestScoreNode, lowestScore } = bestNode ?
+    { lowestScoreNode: bestNode, lowestScore: bestScore ?? 0 } :
+    graph.findLowestScore(startNode);
+
+  return {
+    winningNode: lowestScore === null || lowestScore < minimumWhitespace ? lowestScoreNode : startNode,
+    numberOfIterations: iterationCount
+  };
+}
+
+// 辅助函数：计算批次索引
+function calculateBatchIndex(params: {
+  oneColumnItemsLength: number;
+  multiColumnIndex: number;
+  emptyColumns: number;
+  fitsFirstRow: boolean;
+  replaceWithOneColItems: boolean;
+  itemsBatchSize: number;
+}): number {
+  const { oneColumnItemsLength, multiColumnIndex, emptyColumns, fitsFirstRow, replaceWithOneColItems, itemsBatchSize } = params;
+
+  if (fitsFirstRow) return multiColumnIndex;
+  if (replaceWithOneColItems) return emptyColumns;
+
+  return multiColumnIndex + itemsBatchSize > oneColumnItemsLength ?
+    Math.max(oneColumnItemsLength - itemsBatchSize, emptyColumns) :
+    multiColumnIndex;
+}
+
+// 辅助函数：计算列跨度
+function calculateColumnSpan(params: {
+  columnCount: number;
+  firstItem: any;
+  isFlexibleWidthItem: boolean;
+  item: any;
+  responsiveModuleConfigForSecondItem: ResponsiveModuleConfig | number | undefined;
+  _getColumnSpanConfig: (item: any) => number | ColumnSpanConfig;
+}): number {
+  const { columnCount, item, firstItem, isFlexibleWidthItem, _getColumnSpanConfig, responsiveModuleConfigForSecondItem } = params;
+  const columnSpanConfig = _getColumnSpanConfig(item) as any;
+  const responsiveBreakpoint = columnCount <= 2 ? "sm" :
+                               columnCount <= 4 ? "md" :
+                               columnCount <= 6 ? "_lg1" :
+                               columnCount <= 8 ? "lg" : "xl";
+
+  let columnSpan: number;
+  if (typeof columnSpanConfig === 'number') {
+    columnSpan = columnSpanConfig;
+  } else {
+    if (responsiveBreakpoint === "_lg1") {
+      columnSpan = columnSpanConfig[responsiveBreakpoint] ?? columnSpanConfig.lg ?? 1;
+    } else {
+      columnSpan = columnSpanConfig[responsiveBreakpoint] ?? 1;
+    }
+  }
+
+  if (isFlexibleWidthItem) {
+    const firstItemSpan = _getColumnSpanConfig(firstItem) as any;
+    const firstItemColumnSpan = typeof firstItemSpan === 'number' ? firstItemSpan :
+                                responsiveBreakpoint === "_lg1" ? (firstItemSpan[responsiveBreakpoint] ?? firstItemSpan.lg ?? 1) :
+                                (firstItemSpan[responsiveBreakpoint] ?? 1);
+
+    if (typeof responsiveModuleConfigForSecondItem === 'number') {
+      columnSpan = responsiveModuleConfigForSecondItem;
+    } else if (responsiveModuleConfigForSecondItem) {
+      columnSpan = Math.max(
+        responsiveModuleConfigForSecondItem.min,
+        Math.min(responsiveModuleConfigForSecondItem.max, columnCount - firstItemColumnSpan)
+      );
+    } else {
+      columnSpan = 1;
+    }
+  }
+
+  return Math.min(columnSpan, columnCount);
+}
+
+
+
+// 辅助函数：计算初始高度数组
+function calculateInitialHeights(params: {
+  centerOffset: number;
+  checkIsFlexibleWidthItem: (item: any) => boolean;
+  columnCount: number;
+  columnWidthAndGutter: number;
+  firstItem: any;
+  gutter: number;
+  items: any[];
+  positionCache: measurementStore;
+  responsiveModuleConfigForSecondItem: ResponsiveModuleConfig | number | undefined;
+  _getColumnSpanConfig: (item: any) => number | ColumnSpanConfig;
+}): number[] {
+  const heights = new Array(params.columnCount).fill(0);
+
+  params.items.forEach(item => {
+    const cachedPosition = params.positionCache.get(item);
+    if (cachedPosition) {
+      const columnIndex = Math.round((cachedPosition.left - params.centerOffset) / params.columnWidthAndGutter);
+      const columnSpan = calculateColumnSpan({
+        columnCount: params.columnCount,
+        firstItem: params.firstItem,
+        isFlexibleWidthItem: params.checkIsFlexibleWidthItem(item),
+        item: item,
+        responsiveModuleConfigForSecondItem: params.responsiveModuleConfigForSecondItem,
+        _getColumnSpanConfig: params._getColumnSpanConfig
+      });
+      const newHeight = cachedPosition.top + cachedPosition.height + params.gutter;
+
+      for (let i = columnIndex; i < columnIndex + columnSpan; i++) {
+        if (newHeight > heights[i]) {
+          heights[i] = newHeight;
+        }
+      }
+    }
+  });
+
+  return heights;
 }
 
 /**
@@ -1308,7 +2248,7 @@ export default defineComponent({
     })
 
     return () => {
-      let element: VNode // 渲染的元素
+      let element: any // 渲染的元素
       let {
         align = 'center',
         columnWidth,
@@ -1316,13 +2256,13 @@ export default defineComponent({
         layout = 'basic',
         minCols,
         renderItem,
-        scrollContainer,
         _logTwoColWhitespace,
         _getColumnSpanConfig,
         _getResponsiveModuleConfigForSecondItem,
         _getModulePositioningConfig,
         _enableSectioningPosition,
       } = props
+
 
       const positioner = createPositioner({
         align,
@@ -1341,7 +2281,162 @@ export default defineComponent({
         _enableSectioningPosition,
       })
 
-      return <div>Masonry</div>
+
+      if(width.value === null && hasPendingMeasurements.value) {
+        // 如果是没有宽度，并且还有未测量的项目
+        element = () => <div
+          ref={gridWrapper}
+          class="Masonry"
+          role="list"
+          style={{
+            height: 0,
+            width: "100%"
+          }}
+        >
+          {items.map((item, index) => {
+            var columnSpanTemp;
+            let columnSpan = null!=( columnSpanTemp = null == _getColumnSpanConfig ? undefined : _getColumnSpanConfig(item)) ? columnSpanTemp : 1;
+            return <div
+             ref={ (el: any) => {
+              if(el && "flexible" !== layout) {
+                measurementStore.set(item, el.clientHeight)
+              }
+             }}
+             class="static"
+             data-column-span={columnSpan}
+             data-grid-item={true}
+             role="listitem"
+             style={{
+              top: 0,
+              left: 0,
+              transform: "translateX(0px) translateY(0px)",
+              WebkitTransform: "translateX(0px) translateY(0px)",
+              width: "flexible" === layout || "serverRenderedFlexible" === layout || "object" == typeof columnSpan ? void 0 : safePx("number" == typeof columnSpan && null != columnWidth && null != gutter.value ? columnWidth * columnSpan + gutter.value * (columnSpan - 1) : columnWidth)
+             }}
+            >
+              {renderItem({ data: item, itemIdx: index, isMeasuring: false })}
+            </div>
+          })}
+        </div>
+      } else if (width.value === null) {
+        element = () => <div
+          ref={gridWrapper}
+          style={{
+            width: "100%"
+          }}
+        >
+        </div>
+      } else {
+
+        let i = items.filter((item) => positionStore.has(item))
+        let d = items.filter((item) => !positionStore.has(item))
+        let g = _getColumnSpanConfig && d.find((item) => 1 !== _getColumnSpanConfig(item))
+
+        let t, o ;
+        if(g) {
+          o = d.indexOf(g)
+          let columnCount = calculateColumnCount({
+            gutter: gutter.value,
+            columnWidth: columnWidth,
+            // @ts-ignore
+            width: width.value,
+            minCols: minCols
+          })
+
+
+
+          let n = _getResponsiveModuleConfigForSecondItem && items[1] ? _getResponsiveModuleConfigForSecondItem(items[1]) : undefined
+          let c = !!n && g === items[1]
+          let x = calculateColumnSpan({
+            columnCount: columnCount,
+                    firstItem: items[0],
+                    isFlexibleWidthItem: c,
+                    item: g,
+                    responsiveModuleConfigForSecondItem: n,
+                    // @ts-ignore
+                    _getColumnSpanConfig: _getColumnSpanConfig
+          })
+
+          if (!c) {
+            let {itemsBatchSize : temp} = (null == _getModulePositioningConfig ? void 0 : _getModulePositioningConfig(columnCount, x)) || {
+              itemsBatchSize: 5
+          };
+          t = temp
+          }
+        }
+
+        let f = t && o && o > 0 && o <= t ? t + 1 : minCols
+        let k = items.filter((item) => item && positionStore.has(item)).slice(0, f)
+        let y = positioner(i)
+        let w = positioner(k)
+        let M = y.length ? Math.max(...y.map((e: any) => e.top + e.height), 0 === k.length ? 0 : maxHeight.value) : 0;
+
+        if (M !== maxHeight.value) {
+          maxHeight.value = M
+        }
+
+        element = () => <div
+          ref={gridWrapper}
+          style={{
+            width: "100%"
+          }}
+        >
+          {/* 已经测量的容器 */}
+          <div
+            class="Masonry"
+            role="list"
+            style={{
+              height: M,
+              width: width.value
+            }}
+          >
+            {i.map((item,index)=>{
+              return renderMasonryComponent(item,index,null != positionStore.get(item) ? positionStore.get(item) : y[index])
+            })}
+          {/* 正在测量的容器 */}
+            {k.map((item,index)=>{
+              let a = i.length + index
+              let r = w[index]
+              return <div
+               ref={(el:any) => {
+                if(el) {
+                  measurementStore.set(item,el.clientHeight)
+                }
+               }}
+               role="listitem"
+               style={{
+                visibility: "hidden",
+                position: "absolute",
+                top: safePx(r.top) + 'px',
+                left: safePx(r.left) + 'px',
+                width: safePx(r.width) + 'px',
+                height: safePx(r.height) + 'px'
+               }}
+               key={`measuring-${a}`}
+              >
+                {renderItem({ data: item, itemIdx: a, isMeasuring: true})}
+              </div>
+            })}
+            {/* 滚动容器 */}
+            {
+              props.scrollContainer ?
+              <InfiniteScroll
+                  containerHeight={M}
+                  fetchMore={fetchMore}
+                  isFetching={isFetching.value}
+                  scrollHeight={containerOffset.value + M}
+                  scrollTop={scrollTop.value}
+                /> : null
+            }
+          </div>
+        </div>
+      }
+
+      return props.scrollContainer ? <ScrollContainerWrapper
+        ref={scrollContainer}
+        scrollContainer={props.scrollContainer}
+        onScroll={updateScrollPosition}
+      >{element()}</ScrollContainerWrapper> : element()
     }
   },
 })
