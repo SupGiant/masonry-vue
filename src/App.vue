@@ -1,11 +1,11 @@
 <template>
   <div id="app">
-    <Example />
+    <WaterfallExample/>
   </div>
 </template>
 
 <script setup lang="ts">
-import Example from './components/Masonry/example.vue';
+import WaterfallExample from "./components/Waterfall/WaterfallExample.vue";
 </script>
 
 <style>
