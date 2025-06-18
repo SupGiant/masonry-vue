@@ -359,7 +359,7 @@ const GridItemWrapper = defineComponent({
     })
 
     return () => (
-      <div ref={elementRef} data-grid-item-idx={props.idx}>
+      <div class="test" ref={elementRef} data-grid-item-idx={props.idx}>
         {slots.default?.()}
       </div>
     )
@@ -1996,6 +1996,9 @@ export default defineComponent({
       default: false,
     },
   },
+  components: {
+    GridItemWrapper
+  },
   setup(props, { expose, emit, slots }) {
     const insertAnimationFrame = ref()
     const maxHeight = ref(0) // 最大高度
@@ -2124,6 +2127,7 @@ export default defineComponent({
     const resizeObserver =
       props._dynamicHeights && typeof window !== 'undefined' && positionStore
         ? new ResizeObserver((entries) => {
+          console.log('entries', entries)
             let changedItem = false
             entries.forEach(({ target, contentRect }) => {
               let idx = Number(target.getAttribute('data-grid-item-idx'))
@@ -2333,8 +2337,8 @@ export default defineComponent({
         </div>
       } else {
 
-        let i = items.filter((item) => positionStore.has(item))
-        let d = items.filter((item) => !positionStore.has(item))
+        let i = items.filter((item) => measurementStore.has(item))
+        let d = items.filter((item) => !measurementStore.has(item))
         let g = _getColumnSpanConfig && d.find((item) => 1 !== _getColumnSpanConfig(item))
 
         let t, o ;
@@ -2371,7 +2375,7 @@ export default defineComponent({
         }
 
         let f = t && o && o > 0 && o <= t ? t + 1 : minCols
-        let k = items.filter((item) => item && !positionStore.has(item)).slice(0, f)
+        let k = items.filter((item) => item && !measurementStore.has(item)).slice(0, f)
         let y = positioner(i)
         let w = positioner(k)
         let M = y.length ? Math.max(...y.map((e: any) => e.top + e.height), 0 === k.length ? 0 : maxHeight.value) : 0;
