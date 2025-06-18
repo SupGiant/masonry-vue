@@ -322,6 +322,7 @@ function getScrollY() {
 }
 
 function getContainerOffset(e: HTMLElement | Window) {
+  console.log('getContainerOffset', e)
   return e === window || e instanceof Window
     ? getScrollY()
     : e.scrollTop - e.getBoundingClientRect().top
@@ -832,6 +833,8 @@ function createFixedColumnLayout(config: any) {
       width,
       minCols,
     })
+
+    console.log('columnCount', gutter, columnWidth, width, minCols)
     // 初始化每列的高度数组
     const columnHeights = Array(columnCount).fill(0)
 
@@ -1996,7 +1999,7 @@ export default defineComponent({
   setup(props, { expose, emit, slots }) {
     const insertAnimationFrame = ref()
     const maxHeight = ref(0) // 最大高度
-    const width = ref<number>() // 宽度
+    const width = ref<number>(0) // 宽度
     const scrollTop = ref(0) // 滚动位置
     const containerHeight = ref(0) // 容器高度
     const containerOffset = ref(0) // 容器偏移量
@@ -2160,9 +2163,11 @@ export default defineComponent({
       if (scrollContainer.value) {
         scrollTop.value = getContainerOffset(scrollContainer.value)
       }
-      if (gridWrapper.value) {
-        width.value = gridWrapper.value.getBoundingClientRect().width
-      }
+
+      width.value = gridWrapper.value ? gridWrapper.value.getBoundingClientRect().width : width.value
+
+      console.log('width', width.value)
+      console.log('gridWrapper', gridWrapper.value)
     })
 
     onUpdated(() => {
