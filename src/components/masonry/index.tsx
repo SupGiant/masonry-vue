@@ -625,6 +625,7 @@ function createPositioner(props: PositionerProps) {
   if (!isFlexibleLayout) {
     // 统一行布局
     if (layout.startsWith('uniformRow')) {
+      console.log("创建统一行布局", layout)
       return createUniformRowLayout({
         cache: measurementStore,
         columnWidth,
@@ -635,6 +636,7 @@ function createPositioner(props: PositionerProps) {
       })
     } // 固定列宽布局
     else {
+      console.log("创建固定列宽布局", layout)
       return createFixedColumnLayout({
         align,
         measurementCache: measurementStore,
@@ -653,6 +655,7 @@ function createPositioner(props: PositionerProps) {
       })
     }
   } else {
+    console.log("创建灵活布局", layout)
     return createFlexibleLayout({
       gutter,
       measurementCache: measurementStore,
@@ -867,6 +870,8 @@ function createFixedColumnLayout(config: any) {
         ...otherProps,
       })
     }
+
+    console.log("没有创建多列布局")
     // 标准的瀑布流布局
     return items.map((item) => {
       // 从缓存中获取项目高度
@@ -874,6 +879,7 @@ function createFixedColumnLayout(config: any) {
 
       // 如果没有高度信息，返回默认位置
       if (itemHeight === null) {
+        console.log("没有高度信息，返回默认位置")
         return createDefaultPosition(columnWidth)
       }
 
@@ -2022,6 +2028,7 @@ export default defineComponent({
 
     // 监听窗口大小变化
     const handleResize = debounce(() => {
+      console.log("监听窗口大小变化", gridWrapper.value)
       width.value = gridWrapper.value?.getBoundingClientRect().width || 0
     }, 300)
 
@@ -2382,8 +2389,8 @@ export default defineComponent({
 
         let f = t && o && o > 0 && o <= t ? t + 1 : minCols
         let k = items.filter((item) => item && !measurementStore.has(item)).slice(0, f)
-        let y = positioner(i)
-        let w = positioner(k)
+        let y = positioner(i) // 已经测量的项目的位置
+        let w = positioner(k) // 正在测量的项目的位置
         let M = y.length ? Math.max(...y.map((e: any) => e.top + e.height), 0 === k.length ? 0 : maxHeight.value) : 0;
 
         if (M !== maxHeight.value) {
@@ -2416,7 +2423,7 @@ export default defineComponent({
           {/* 正在测量的容器 */}
             {k.map((item,index)=>{
               let a = i.length + index
-              let r = w[index]
+              let r = w[index] // 正在测量的项目的位置
               return <div
                ref={(el:any) => {
                 if(el) {
