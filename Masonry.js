@@ -461,28 +461,35 @@ let dC = e => {
 
 function i3({items: e, changedItem: o, newHeight: a, positionStore: r, measurementStore: t, gutter: n}) {
   var l;
-  let c, i = r.get(o), d = dj.createMeasurementStore();
+  let c, i = r.get(o),
+  d = dj.createMeasurementStore();
   if (e.forEach(e => {
       let o = r.get(e);
       d.set(e, Object.assign({}, o))
   }
   ),
+  // 没有缓存，或者高度没有变化
   !i || 0 === a || Math.floor(i.height) === Math.floor(a))
       return !1;
-  let {top: s, left: u, width: b, height: g} = i
-    , m = (l = e.slice(0, 10),
+
+
+  let {top: s, left: u, width: b, height: g} = i // 获取当前的缓存的位置变量
+    , m = (
+      l = e.slice(0, 10),
   c = 1 / 0,
   l.forEach(e => {
-      let o = r.get(e);
-      o && (c = Math.min(c, o.width))
+      let o = r.get(e); // 当前的所有缓存
+      o && (c = Math.min(c, o.width)) // 找到最小的宽度
   }
   ),
   c)
+
     , f = [{
       left: u,
       right: u + b,
       delta: a - g
   }]
+  // 找到所有在变化项目下方的项目，并按顶部位置排序
     , p = e.map(e => {
       let o = r.get(e);
       return o && o.top >= i.top + i.height ? {
@@ -491,6 +498,8 @@ function i3({items: e, changedItem: o, newHeight: a, positionStore: r, measureme
       } : void 0
   }
   ).filter(e => !!e).sort( (e, o) => e.position.top - o.position.top);
+
+
   return t.set(o, a),
   r.set(o, {
       top: s,
@@ -712,7 +721,7 @@ function dh({resizeObserver: e, idx: o, children: a}) {
       children: a
   })
 }
-
+// 基本布局，固定列宽
 let ds = e => {
   var {align: o, columnWidth: a=236, gutter: r, layout: t, minCols: n=2, rawItemCount: l, width: c, measurementCache: i, _getColumnSpanConfig: d, _getModulePositioningConfig: s, _getResponsiveModuleConfigForSecondItem: u, _enableSectioningPosition: g} = e
     , m = b(e, ["align", "columnWidth", "gutter", "layout", "minCols", "rawItemCount", "width", "measurementCache", "_getColumnSpanConfig", "_getModulePositioningConfig", "_getResponsiveModuleConfigForSecondItem", "_enableSectioningPosition"]);
@@ -736,7 +745,9 @@ let ds = e => {
           rawItemCount: l,
           width: c
       });
-      return d ? dc(Object.assign({
+      return d ?
+      // 创建多列布局， 返回位置
+      dc(Object.assign({
           items: e,
           columnWidth: a,
           columnCount: f,
@@ -747,14 +758,16 @@ let ds = e => {
           _getResponsiveModuleConfigForSecondItem: null != u ? u : di,
           _getModulePositioningConfig: s,
           _enableSectioningPosition: g
-      }, m)) : e.map(e => {
+      }, m)) :
+      // 没有创建多列布局， 返回默认位置
+      e.map(e => {
           let o = i.get(e);
           if (null == o)
               return i7(a);
           let t = o > 0 ? o + r : 0
-            , n = i8(p)
+            , n = i8(p) // 找到最短的一列
             , l = p[n]
-            , c = n * b + h;
+            , c = n * b + h; // 左偏移量
           return p[n] = p[n] + t,
           {
               top: l,
@@ -907,7 +920,19 @@ function i7(e, o=1 / 0) {
   }
 }
 
-let dd = ({align: e, columnCount: o, columnWidthAndGutter: a, gutter: r, layout: t, rawItemCount: n, width: l}) => "basicCentered" === t ? Math.max(Math.floor((l - (Math.min(n, o) * a + r)) / 2), 0) : "center" === e ? Math.max(Math.floor((l - a * o + r) / 2), 0) : "end" === e ? l - (a * o - r) : 0
+// calculateCenterOffset 计算中心偏移量
+let dd = (
+  {align: e, columnCount: o,
+    columnWidthAndGutter: a, gutter: r, layout: t,
+    rawItemCount: n, width: l}) =>
+  // 基本居中
+  "basicCentered" === t ?
+  // 计算中心偏移量
+  Math.max(Math.floor((l - (Math.min(n, o) * a + r)) / 2), 0)
+  // 居中
+   : "center" === e ? Math.max(Math.floor((l - a * o + r) / 2), 0) :
+   // 右对齐
+    "end" === e ? l - (a * o - r) : 0
 
 
 //handleMultiColumnLayout

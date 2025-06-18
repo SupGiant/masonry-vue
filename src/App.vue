@@ -1,6 +1,6 @@
 <template>
   <div id="app" class="app">
-    虚拟的瀑布流
+    <img src="./assets/losssgo.png" alt="logo" />
     <div class="container" ref="containerRef">
       <VirtualMasonry
       :items="items"

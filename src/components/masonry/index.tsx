@@ -358,7 +358,7 @@ const GridItemWrapper = defineComponent({
     })
 
     return () => (
-      <div class="test" ref={elementRef} data-grid-item-idx={props.idx}>
+      <div  ref={elementRef} data-grid-item-idx={props.idx}>
         {slots.default?.()}
       </div>
     )
@@ -400,9 +400,7 @@ function updateItemPositions(param: AdjustedHeightParams) {
   const tempPositionStore = createMeasurementStore()
   items.forEach((item) => {
     const position = positionStore.get(item)
-    if (position) {
-      tempPositionStore.set(item, { ...position })
-    }
+    tempPositionStore.set(item, { ...position })
   })
 
   // 如果没有位置信息、新高度为0、或高度没有实际变化，则不需要调整
@@ -411,9 +409,15 @@ function updateItemPositions(param: AdjustedHeightParams) {
     newHeight === 0 ||
     Math.floor(currentPosition.height) === Math.floor(newHeight)
   ) {
+    if(!currentPosition) console.log("不需要调整位置，因为获取不到当前的位置存储", currentPosition)
+    if(newHeight === 0) console.log("不需要调整位置，因为新高度为0", newHeight)
+    if(currentPosition &&Math.floor(currentPosition.height) === Math.floor(newHeight)) console.log("不需要调整位置，因为高度没有实际变化", Math.floor(currentPosition.height), Math.floor(newHeight))
     return false
   }
 
+
+
+  //
   const { top, left, width, height: oldHeight } = currentPosition
 
   // 计算最小列宽（从前10个项目中获取）
@@ -440,20 +444,19 @@ function updateItemPositions(param: AdjustedHeightParams) {
     .sort((a, b) => a.position.top - b.position.top)
 
   // 更新变化项目的高度
-  measurementStore.set(changedItem, newHeight)
+  measurementStore.set(changedItem, newHeight) // 更新高度
   positionStore.set(changedItem, {
     top,
     left,
     width,
     height: newHeight,
-  })
+  }) // 更新位置
 
   // 处理所有受影响的下方项目
-  const finalOverlapRegion = itemsBelow.reduce(
+  itemsBelow.reduce(
     (currentOverlapRegion, { item, position }) => {
-      if (hasOverlap(currentOverlapRegion, position)) {
-        // 如果是多列项目，需要特殊处理
-        if (position.width > minColumnWidth) {
+      if (hasOverlap(currentOverlapRegion, position)) { // 如果当前项目和之前的项目有重叠
+        if (position.width > minColumnWidth) { // 如果当前项目宽度大于最小列宽
           const multiColumnDelta = calculateMultiColumnDelta({
             currentPosition: position,
             allPreviousItems: items
@@ -499,7 +502,14 @@ function updateItemPositions(param: AdjustedHeightParams) {
     } as OverlapRegion,
   )
 
+
+
   return true
+}
+
+// 检查两个区域是否有重叠
+function hasOverlap(totalPosition: OverlapRegion, currentPosition: Position) {
+  return currentPosition.left < totalPosition.right && currentPosition.left + currentPosition.width > totalPosition.left
 }
 
 /**
@@ -518,12 +528,12 @@ function calculatePositionDelta(deltaRegions: DeltaRegion[], position: Position)
 /**
  * 检查两个区域是否有重叠
  */
-function hasOverlap(region: OverlapRegion, position: Position): boolean {
-  return (
-    (region.left <= position.left && region.right > position.left) ||
-    (region.left < position.left + position.width && region.right >= position.left + position.width)
-  )
-}
+// function hasOverlap(region: OverlapRegion, position: Position): boolean {
+//   return (
+//     (region.left <= position.left && region.right > position.left) ||
+//     (region.left < position.left + position.width && region.right >= position.left + position.width)
+//   )
+// }
 
 /**
  * 计算多列项目的高度调整值
@@ -824,11 +834,13 @@ function createFixedColumnLayout(config: any) {
 
   return function (items: any[]) {
     if (width === null) {
+      console.log("没有宽度，返回默认位置")
       return items.map(() => createDefaultPosition(columnWidth))
     }
 
     // 计算基础参数
     const columnWidthAndGutter = columnWidth + gutter
+    // 计算列数, 也就是整个的width可以放多少列， 最低不能少于minCols
     const columnCount = calculateColumnCount({
       gutter,
       columnWidth,
@@ -872,10 +884,15 @@ function createFixedColumnLayout(config: any) {
     }
 
     console.log("没有创建多列布局")
+    console.log("columnHeights", columnHeights)
     // 标准的瀑布流布局
-    return items.map((item) => {
+    return items.map((item,index) => {
       // 从缓存中获取项目高度
       const itemHeight = measurementCache.get(item)
+
+      // if(itemHeight == 21) {
+      //   return createDefaultPosition(columnWidth)
+      // }
 
       // 如果没有高度信息，返回默认位置
       if (itemHeight === null) {
@@ -888,7 +905,7 @@ function createFixedColumnLayout(config: any) {
 
       // 找到最短的列
       const shortestColumnIndex = findShortestColumnIndex(columnHeights)
-      const currentTop = columnHeights[shortestColumnIndex]
+      const currentTop = columnHeights[shortestColumnIndex]  // 当前列的高度
 
       // 计算项目位置
       const left = shortestColumnIndex * columnWidthAndGutter + centerOffset
@@ -896,8 +913,9 @@ function createFixedColumnLayout(config: any) {
       // 更新该列的高度
       columnHeights[shortestColumnIndex] += totalItemHeight
 
+      console.log(`${index} - ${currentTop}`)
       return {
-        top: currentTop,
+        top: currentTop, // 当前列的高度
         left,
         width: columnWidth,
         height: itemHeight,
@@ -2138,6 +2156,7 @@ export default defineComponent({
               if (typeof idx === 'number') {
                 let item = items.value[idx]
                 let newHeight = contentRect.height
+                // console.log("newHeight", newHeight) // 第一次触发的时候都是21
                 changedItem =
                   updateItemPositions({
                     items: items.value,
@@ -2145,13 +2164,10 @@ export default defineComponent({
                     newHeight: newHeight,
                     positionStore: positionStore,
                     measurementStore: measurementStore,
-                    gutter: gutter.value,
-                  }) || changedItem
+                    gutter: gutter.value, // 默认14
+                  })
               }
             })
-            if (changedItem) {
-              // 强制更新渲染
-            }
           })
         : undefined
 
@@ -2275,6 +2291,7 @@ export default defineComponent({
       } = props
 
 
+      // 实际返回了基本的固定列宽布局 createFixedColumnLayout()
       const positioner = createPositioner({
         align,
         columnWidth,
@@ -2348,15 +2365,15 @@ export default defineComponent({
         </div>
       } else {
 
-        let i = items.filter((item) => measurementStore.has(item))
-        let d = items.filter((item) => !measurementStore.has(item))
+        let ismeasuring = items.filter((item) => measurementStore.has(item))
+        let notMeasuring = items.filter((item) => !measurementStore.has(item))
 
-        console.log("已经测量的项目", i.length, "未测量的项目", d.length)
-        let g = _getColumnSpanConfig && d.find((item) => 1 !== _getColumnSpanConfig(item))
+        console.log("已经测量的项目", ismeasuring.length, "未测量的项目", notMeasuring.length)
+        let g = _getColumnSpanConfig && notMeasuring.find((item) => 1 !== _getColumnSpanConfig(item))
 
         let t, o ;
         if(g) {
-          o = d.indexOf(g)
+          o = notMeasuring.indexOf(g)
           let columnCount = calculateColumnCount({
             gutter: gutter.value,
             columnWidth: columnWidth,
@@ -2388,13 +2405,17 @@ export default defineComponent({
         }
 
         let f = t && o && o > 0 && o <= t ? t + 1 : minCols
-        let k = items.filter((item) => item && !measurementStore.has(item)).slice(0, f)
-        let y = positioner(i) // 已经测量的项目的位置
-        let w = positioner(k) // 正在测量的项目的位置
-        let M = y.length ? Math.max(...y.map((e: any) => e.top + e.height), 0 === k.length ? 0 : maxHeight.value) : 0;
+        let noMeasuringItem = items.filter((item) => item && !measurementStore.has(item)).slice(0, f)
+        let itemPositionRender = positioner(ismeasuring) // 已经测量的项目的位置
+        let itemPositionMeasuring = positioner(noMeasuringItem) // 正在测量的项目的位置
 
-        if (M !== maxHeight.value) {
-          maxHeight.value = M
+        console.log("itemPositionRender", itemPositionRender)
+
+        // 计算最大高度
+        let maxHeightTemp = itemPositionRender.length ? Math.max(...itemPositionRender.map((e: any) => e.top + e.height), 0 === noMeasuringItem.length ? 0 : maxHeight.value) : 0;
+
+        if (maxHeightTemp !== maxHeight.value) {
+          maxHeight.value = maxHeightTemp
         }
 
         element = () => <div
@@ -2413,17 +2434,19 @@ export default defineComponent({
             class="Masonry"
             role="list"
             style={{
-              height: M,
+              height: maxHeightTemp,
               width: width.value
             }}
           >
-            {i.map((item,index)=>{
-              return renderMasonryComponent(item,index,null != positionStore.get(item) ? positionStore.get(item) : y[index])
+            {ismeasuring.map((item,index)=>{
+              //
+              console.log(null != positionStore.get(item) ? '采用缓存的位置' : '采用计算的位置')
+              return renderMasonryComponent(item,index,null != positionStore.get(item) ? positionStore.get(item) : itemPositionRender[index])
             })}
           {/* 正在测量的容器 */}
-            {k.map((item,index)=>{
-              let a = i.length + index
-              let r = w[index] // 正在测量的项目的位置
+            {noMeasuringItem.map((item,index)=>{
+              let a = ismeasuring.length + index
+              let r = itemPositionMeasuring[index] // 正在测量的项目的位置
               return <div
                ref={(el:any) => {
                 if(el) {
@@ -2448,10 +2471,10 @@ export default defineComponent({
             {
               props.scrollContainer ?
               <InfiniteScroll
-                  containerHeight={M}
+                  containerHeight={maxHeightTemp}
                   fetchMore={fetchMore}
                   isFetching={isFetching.value}
-                  scrollHeight={containerOffset.value + M}
+                  scrollHeight={containerOffset.value + maxHeightTemp}
                   scrollTop={scrollTop.value}
                 /> : null
             }
