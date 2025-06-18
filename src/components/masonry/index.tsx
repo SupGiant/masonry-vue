@@ -322,7 +322,6 @@ function getScrollY() {
 }
 
 function getContainerOffset(e: HTMLElement | Window) {
-  console.log('getContainerOffset', e)
   return e === window || e instanceof Window
     ? getScrollY()
     : e.scrollTop - e.getBoundingClientRect().top
@@ -834,7 +833,6 @@ function createFixedColumnLayout(config: any) {
       minCols,
     })
 
-    console.log('columnCount', gutter, columnWidth, width, minCols)
     // 初始化每列的高度数组
     const columnHeights = Array(columnCount).fill(0)
 
@@ -2017,6 +2015,7 @@ export default defineComponent({
     const measurementStore = props.measurementStore || createMeasurementStore()
 
     const items = ref(props.items) // 初始化数据
+
     const hasPendingMeasurements = ref(
       items.value.some((item) => !!item && !measurementStore.has(item)),
     )
@@ -2116,18 +2115,16 @@ export default defineComponent({
         )
       }
 
-      return () =>
-        ('function' == typeof virtualize ? virtualize(item) : virtualize)
-          ? isVisible
-            ? element()
-            : null
-          : element()
+      return ('function' == typeof virtualize ? virtualize(item) : virtualize)
+        ? isVisible
+          ? element()
+          : null
+        : element()
     }
 
     const resizeObserver =
       props._dynamicHeights && typeof window !== 'undefined' && positionStore
         ? new ResizeObserver((entries) => {
-          console.log('entries', entries)
             let changedItem = false
             entries.forEach(({ target, contentRect }) => {
               let idx = Number(target.getAttribute('data-grid-item-idx'))
@@ -2170,8 +2167,6 @@ export default defineComponent({
 
       width.value = gridWrapper.value ? gridWrapper.value.getBoundingClientRect().width : width.value
 
-      console.log('width', width.value)
-      console.log('gridWrapper', gridWrapper.value)
     })
 
     onUpdated(() => {
@@ -2291,10 +2286,15 @@ export default defineComponent({
       })
 
 
-      if(width.value === 0 && hasPendingMeasurements.value) {
+      if(hasPendingMeasurements.value) {
         // 如果是没有宽度，并且还有未测量的项目
         element = () => <div
-          ref={gridWrapper}
+          ref={(el: any) => {
+            if(el) {
+              gridWrapper.value = el
+              hasPendingMeasurements.value = items.some((a) => !!a && !measurementStore.has(a))
+            }
+          }}
           class="Masonry"
           role="list"
           style={{
@@ -2329,7 +2329,11 @@ export default defineComponent({
         </div>
       } else if (width.value === 0) {
         element = () => <div
-          ref={gridWrapper}
+          ref={(el: any) => {
+            if(el) {
+              gridWrapper.value = el
+            }
+          }}
           style={{
             width: "100%"
           }}
@@ -2339,6 +2343,8 @@ export default defineComponent({
 
         let i = items.filter((item) => measurementStore.has(item))
         let d = items.filter((item) => !measurementStore.has(item))
+
+        console.log("已经测量的项目", i.length, "未测量的项目", d.length)
         let g = _getColumnSpanConfig && d.find((item) => 1 !== _getColumnSpanConfig(item))
 
         let t, o ;
@@ -2385,7 +2391,12 @@ export default defineComponent({
         }
 
         element = () => <div
-          ref={gridWrapper}
+          ref={(el: any) => {
+            if(el) {
+              gridWrapper.value = el
+            }
+          }}
+          id="gridWrapper"
           style={{
             width: "100%"
           }}
