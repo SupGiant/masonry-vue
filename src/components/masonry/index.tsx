@@ -2287,7 +2287,7 @@ export default defineComponent({
       })
 
 
-      if(width.value === null && hasPendingMeasurements.value) {
+      if(width.value === 0 && hasPendingMeasurements.value) {
         // 如果是没有宽度，并且还有未测量的项目
         element = () => <div
           ref={gridWrapper}
@@ -2323,7 +2323,7 @@ export default defineComponent({
             </div>
           })}
         </div>
-      } else if (width.value === null) {
+      } else if (width.value === 0) {
         element = () => <div
           ref={gridWrapper}
           style={{
@@ -2371,7 +2371,7 @@ export default defineComponent({
         }
 
         let f = t && o && o > 0 && o <= t ? t + 1 : minCols
-        let k = items.filter((item) => item && positionStore.has(item)).slice(0, f)
+        let k = items.filter((item) => item && !positionStore.has(item)).slice(0, f)
         let y = positioner(i)
         let w = positioner(k)
         let M = y.length ? Math.max(...y.map((e: any) => e.top + e.height), 0 === k.length ? 0 : maxHeight.value) : 0;

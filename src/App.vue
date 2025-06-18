@@ -30,7 +30,7 @@ let itemIdCounter = 0
 
 const renderItem = ({ data, itemIdx, isMeasuring }: { data: any, itemIdx: number, isMeasuring: boolean }) => {
   return <div>
-    <img src={data.url} alt="item" key={itemIdx} style={{ width: '100%', height: '100%' }} />
+    <img src={data.imageUrl} alt="item" key={itemIdx} style={{ width: '100%', height: '100%' }} />
   </div>
 }
 
