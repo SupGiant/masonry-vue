@@ -11,6 +11,7 @@ import {
   onBeforeUnmount,
   type VNode,
 } from 'vue'
+import './base.css'
 
 class measurementStore {
   map = new WeakMap<object, any>()
@@ -372,6 +373,7 @@ interface AdjustedHeightParams {
   positionStore: measurementStore
   measurementStore: measurementStore
   gutter: number
+  tempIndex?: number
 }
 
 // 高度变化影响区域
@@ -392,7 +394,7 @@ interface OverlapRegion {
 }
 
 function updateItemPositions(param: AdjustedHeightParams) {
-  const { items, changedItem, newHeight, positionStore, measurementStore, gutter } = param
+  const { items, changedItem, newHeight, positionStore, measurementStore, gutter, tempIndex } = param
 
   // 获取变化项目的当前位置信息
   const currentPosition = positionStore.get(changedItem)
@@ -403,25 +405,26 @@ function updateItemPositions(param: AdjustedHeightParams) {
     tempPositionStore.set(item, { ...position })
   })
 
+
   // 如果没有位置信息、新高度为0、或高度没有实际变化，则不需要调整
   if (
     !currentPosition ||
     newHeight === 0 ||
     Math.floor(currentPosition.height) === Math.floor(newHeight)
   ) {
-    if(!currentPosition) console.log("不需要调整位置，因为获取不到当前的位置存储", currentPosition)
-    if(newHeight === 0) console.log("不需要调整位置，因为新高度为0", newHeight)
-    if(currentPosition &&Math.floor(currentPosition.height) === Math.floor(newHeight)) console.log("不需要调整位置，因为高度没有实际变化", Math.floor(currentPosition.height), Math.floor(newHeight))
+
+
     return false
   }
 
-
+  console.log("项目需要更新", tempIndex, "新高度", newHeight, "旧高度", currentPosition?.height)
 
   //
   const { top, left, width, height: oldHeight } = currentPosition
 
   // 计算最小列宽（从前10个项目中获取）
   const minColumnWidth = calculateMinColumnWidth(items.slice(0, 10), positionStore)
+
 
   // 初始化高度变化影响区域列表
   const deltaRegions: DeltaRegion[] = [
@@ -431,6 +434,7 @@ function updateItemPositions(param: AdjustedHeightParams) {
       delta: newHeight - oldHeight,
     },
   ]
+
 
   // 找到所有在变化项目下方的项目，并按顶部位置排序
   const itemsBelow: ItemPosition[] = items
@@ -442,6 +446,7 @@ function updateItemPositions(param: AdjustedHeightParams) {
     })
     .filter((itemPos): itemPos is ItemPosition => !!itemPos)
     .sort((a, b) => a.position.top - b.position.top)
+
 
   // 更新变化项目的高度
   measurementStore.set(changedItem, newHeight) // 更新高度
@@ -456,6 +461,7 @@ function updateItemPositions(param: AdjustedHeightParams) {
   itemsBelow.reduce(
     (currentOverlapRegion, { item, position }) => {
       if (hasOverlap(currentOverlapRegion, position)) { // 如果当前项目和之前的项目有重叠
+        console.log(item.id,"项目下方有重叠", position)
         if (position.width > minColumnWidth) { // 如果当前项目宽度大于最小列宽
           const multiColumnDelta = calculateMultiColumnDelta({
             currentPosition: position,
@@ -488,11 +494,15 @@ function updateItemPositions(param: AdjustedHeightParams) {
           top: position.top + positionDelta,
         })
 
+        console.log(item.id,"项目下方更新位置", position)
+
         // 更新重叠区域
         return {
           left: Math.min(currentOverlapRegion.left, position.left),
           right: Math.max(currentOverlapRegion.right, position.left + position.width),
         }
+      } else {
+        console.log(item.id,"项目下方没有重叠", position)
       }
       return currentOverlapRegion
     },
@@ -548,11 +558,12 @@ function calculateMultiColumnDelta(params: {
   let highestItem: ItemPosition | undefined
 
   allPreviousItems.forEach(({ item, position }) => {
+    // 修正：使用与React版本一致的重叠检测逻辑
     const hasHorizontalOverlap =
       (currentPosition.left <= position.left &&
-        currentPosition.left + currentPosition.width > position.left) ||
+       currentPosition.left + currentPosition.width > position.left) ||
       (currentPosition.left < position.left + position.width &&
-        currentPosition.left + currentPosition.width >= position.left + position.width)
+       currentPosition.left + currentPosition.width >= position.left + position.width)
 
     if (
       hasHorizontalOverlap &&
@@ -563,9 +574,13 @@ function calculateMultiColumnDelta(params: {
     }
   })
 
-  return highestItem
-    ? highestItem.position.top + highestItem.position.height - currentPosition.top + gutter
-    : 0
+  // 修正：如果没有找到重叠项，应该返回gutter而不是0，与React版本保持一致
+  if (!highestItem) {
+    console.warn('calculateMultiColumnDelta: 没有找到水平重叠的项目')
+    return gutter
+  }
+
+  return highestItem.position.top + highestItem.position.height - currentPosition.top + gutter
 }
 
 /**
@@ -629,57 +644,22 @@ function createPositioner(props: PositionerProps) {
   } = props
 
   // 检查是否为灵活布局
-  const isFlexibleLayout =
-    layout === 'flexible' || (layout === 'serverRenderedFlexible' && width !== null)
-
-  if (!isFlexibleLayout) {
-    // 统一行布局
-    if (layout.startsWith('uniformRow')) {
-      console.log("创建统一行布局", layout)
-      return createUniformRowLayout({
-        cache: measurementStore,
-        columnWidth,
-        gutter,
-        flexible: layout === 'uniformRowFlexible',
-        minCols,
-        width: width as number,
-      })
-    } // 固定列宽布局
-    else {
-      console.log("创建固定列宽布局", layout)
-      return createFixedColumnLayout({
-        align,
-        measurementCache: measurementStore,
-        positionCache: positionStore,
-        columnWidth,
-        gutter,
-        layout,
-        minCols,
-        rawItemCount: items.length,
-        width,
-        originalItems: items,
-        _getColumnSpanConfig,
-        _getResponsiveModuleConfigForSecondItem,
-        _getModulePositioningConfig,
-        _enableSectioningPosition,
-      })
-    }
-  } else {
-    console.log("创建灵活布局", layout)
-    return createFlexibleLayout({
-      gutter,
-      measurementCache: measurementStore,
-      positionCache: positionStore,
-      minCols,
-      idealColumnWidth: columnWidth,
-      width,
-      originalItems: items,
-      _getColumnSpanConfig,
-      _getResponsiveModuleConfigForSecondItem,
-      _getModulePositioningConfig,
-      _enableSectioningPosition,
-    })
-  }
+  return createFixedColumnLayout({
+    align,
+    measurementCache: measurementStore,
+    positionCache: positionStore,
+    columnWidth,
+    gutter,
+    layout,
+    minCols,
+    rawItemCount: items.length,
+    width,
+    originalItems: items,
+    _getColumnSpanConfig,
+    _getResponsiveModuleConfigForSecondItem,
+    _getModulePositioningConfig,
+    _enableSectioningPosition,
+  })
 }
 
 // 灵活布局
@@ -913,7 +893,13 @@ function createFixedColumnLayout(config: any) {
       // 更新该列的高度
       columnHeights[shortestColumnIndex] += totalItemHeight
 
-      console.log(`${index} - ${currentTop}`)
+      // console.log(`${index} - ${currentTop}`)
+      positionCache.set(item, {
+        top: currentTop, // 当前列的高度
+        left,
+        width: columnWidth,
+        height: itemHeight,
+      })
       return {
         top: currentTop, // 当前列的高度
         left,
@@ -2150,14 +2136,15 @@ export default defineComponent({
     const resizeObserver =
       props._dynamicHeights && typeof window !== 'undefined' && positionStore
         ? new ResizeObserver((entries) => {
-            let changedItem = false
             entries.forEach(({ target, contentRect }) => {
               let idx = Number(target.getAttribute('data-grid-item-idx'))
               if (typeof idx === 'number') {
                 let item = items.value[idx]
                 let newHeight = contentRect.height
-                // console.log("newHeight", newHeight) // 第一次触发的时候都是21
-                changedItem =
+                let tempIndex = Math.floor(Math.random()* 1000)
+                if(newHeight > 21) {
+                  console.log("newHeight", newHeight, tempIndex)
+                }
                   updateItemPositions({
                     items: items.value,
                     changedItem: item,
@@ -2165,6 +2152,7 @@ export default defineComponent({
                     positionStore: positionStore,
                     measurementStore: measurementStore,
                     gutter: gutter.value, // 默认14
+                    tempIndex: tempIndex
                   })
               }
             })
@@ -2369,40 +2357,10 @@ export default defineComponent({
         let notMeasuring = items.filter((item) => !measurementStore.has(item))
 
         console.log("已经测量的项目", ismeasuring.length, "未测量的项目", notMeasuring.length)
-        let g = _getColumnSpanConfig && notMeasuring.find((item) => 1 !== _getColumnSpanConfig(item))
+
 
         let t, o ;
-        if(g) {
-          o = notMeasuring.indexOf(g)
-          let columnCount = calculateColumnCount({
-            gutter: gutter.value,
-            columnWidth: columnWidth,
-            // @ts-ignore
-            width: width.value,
-            minCols: minCols
-          })
 
-
-
-          let n = _getResponsiveModuleConfigForSecondItem && items[1] ? _getResponsiveModuleConfigForSecondItem(items[1]) : undefined
-          let c = !!n && g === items[1]
-          let x = calculateColumnSpan({
-            columnCount: columnCount,
-                    firstItem: items[0],
-                    isFlexibleWidthItem: c,
-                    item: g,
-                    responsiveModuleConfigForSecondItem: n,
-                    // @ts-ignore
-                    _getColumnSpanConfig: _getColumnSpanConfig
-          })
-
-          if (!c) {
-            let {itemsBatchSize : temp} = (null == _getModulePositioningConfig ? void 0 : _getModulePositioningConfig(columnCount, x)) || {
-              itemsBatchSize: 5
-          };
-          t = temp
-          }
-        }
 
         let f = t && o && o > 0 && o <= t ? t + 1 : minCols
         let noMeasuringItem = items.filter((item) => item && !measurementStore.has(item)).slice(0, f)
@@ -2410,6 +2368,7 @@ export default defineComponent({
         let itemPositionMeasuring = positioner(noMeasuringItem) // 正在测量的项目的位置
 
         console.log("itemPositionRender", itemPositionRender)
+        console.log("itemPositionMeasuring", itemPositionMeasuring)
 
         // 计算最大高度
         let maxHeightTemp = itemPositionRender.length ? Math.max(...itemPositionRender.map((e: any) => e.top + e.height), 0 === noMeasuringItem.length ? 0 : maxHeight.value) : 0;

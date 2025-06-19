@@ -1,0 +1,10 @@
+.Masonry {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+}
+
+.Masonry__Item {
+  position: absolute;
+  transition: transform 0.2s;
+}
