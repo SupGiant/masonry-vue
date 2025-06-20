@@ -10,6 +10,7 @@ import {
   watch,
   onBeforeUnmount,
   type VNode,
+  getCurrentInstance,
 } from 'vue'
 import './base.css'
 
@@ -1917,7 +1918,9 @@ function createDefaultPosition(columnWidth: number): Position {
   }
 }
 
-export default defineComponent({
+
+
+const Masonry = defineComponent({
   name: 'VirtualMasonry',
   props: {
     // 必需的props
@@ -1974,8 +1977,14 @@ export default defineComponent({
       type: Number,
       default: 0.7,
     },
-    virtualBoundsTop: Number,
-    virtualBoundsBottom: Number,
+    virtualBoundsTop: {
+      type: Number,
+      default: 200,
+    },
+    virtualBoundsBottom: {
+      type: Number,
+      default: 200,
+    },
 
     // 滚动容器props
     scrollContainer: Object as PropType<HTMLElement | Window>,
@@ -2029,6 +2038,9 @@ export default defineComponent({
     const hasPendingMeasurements = ref(
       items.value.some((item) => !!item && !measurementStore.has(item)),
     )
+
+    // 用于强制更新的响应式变量
+    const forceUpdateKey = ref(0)
 
     // 监听窗口大小变化
     const handleResize = debounce(() => {
@@ -2126,6 +2138,10 @@ export default defineComponent({
         )
       }
 
+      if(isVisible) {
+        console.log("isVisible", isVisible)
+      }
+
       return ('function' == typeof virtualize ? virtualize(item) : virtualize)
         ? isVisible
           ? element()
@@ -2145,7 +2161,7 @@ export default defineComponent({
                 if(newHeight > 21) {
                   console.log("newHeight", newHeight, tempIndex)
                 }
-                  updateItemPositions({
+                const isChanged = updateItemPositions({
                     items: items.value,
                     changedItem: item,
                     newHeight: newHeight,
@@ -2154,11 +2170,24 @@ export default defineComponent({
                     gutter: gutter.value, // 默认14
                     tempIndex: tempIndex
                   })
+                  if(isChanged) {
+                    forceUpdate()
+                  }
               }
             })
           })
         : undefined
 
+    const forceUpdate = () => {
+      // 方法1：使用getCurrentInstance获取实例强制更新
+      const instance = getCurrentInstance()
+      if (instance) {
+        instance.proxy?.$forceUpdate()
+      }
+
+      // 方法2：使用响应式变量触发更新（更推荐）
+      forceUpdateKey.value++
+    }
     const reflow = () => {
       measurementStore.reset()
       positionStore.reset()
@@ -2263,6 +2292,9 @@ export default defineComponent({
     })
 
     return () => {
+      // 使用forceUpdateKey确保在需要时重新渲染
+      const _ = forceUpdateKey.value
+
       let element: any // 渲染的元素
       let {
         align = 'center',
@@ -2448,4 +2480,7 @@ export default defineComponent({
       >{element()}</ScrollContainerWrapper> : element()
     }
   },
-})
+});
+
+
+export default Masonry

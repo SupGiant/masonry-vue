@@ -1,6 +1,5 @@
 <template>
   <div id="app" class="app">
-    <img src="./assets/losssgo.png" alt="logo" />
     <div class="container" ref="containerRef">
       <VirtualMasonry
       :items="items"
@@ -10,6 +9,7 @@
       :align="'center'"
       :columnWidth="240"
       :layout="'basic'"
+      :virtualize="true"
     />
     </div>
 
@@ -89,7 +89,7 @@ function generateItems(count: number) {
 
 // 添加项目
 function addItems() {
-  const newItems = generateItems(30)
+  const newItems = generateItems(100)
   items.value.push(...newItems)
 }
 
